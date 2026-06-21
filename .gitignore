@@ -1,0 +1,5 @@
+.venv-*/
+.stem-models/
+separated/
+__pycache__/
+*.pyc

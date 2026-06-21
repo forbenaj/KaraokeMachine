@@ -1,0 +1,9 @@
+﻿{
+    "name":  "com.dkaraoke.downloader",
+    "description":  "Local downloader and RoFormer separator for DKaraoKe",
+    "path":  "D:\\Benja\\Documents\\DKaraoKe\\host\\dkaraoke_host.cmd",
+    "type":  "stdio",
+    "allowed_origins":  [
+                            "chrome-extension://hmhfpcnpgiagkiflecadlbahojdamnbe/"
+                        ]
+}
