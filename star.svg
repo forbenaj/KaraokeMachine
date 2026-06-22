@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 2000">
+  <title>Five-ray karaoke starburst mask</title>
+  <g fill="#fff">
+    <path d="M1000 1000 2000 857V1510Z"/>
+    <path d="M1000 1000 1506 2000H867Z"/>
+    <path d="M1000 1000 0 1991V1160Z"/>
+    <path d="M1000 1000 0 472V0H486Z"/>
+    <path d="M1000 1000 1160 0H1991Z"/>
+  </g>
+</svg>

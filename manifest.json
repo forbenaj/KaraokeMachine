@@ -25,7 +25,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png"],
+      "resources": ["logo.png", "star.svg"],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

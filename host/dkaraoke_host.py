@@ -308,7 +308,7 @@ def run_roformer(job_id, source_path, output_dir):
             "RoFormer is not installed. Run setup-roformer.ps1."
         )
 
-    send_job(job_id, "status", "Separating instrumental and vocals with RoFormer...")
+    send_job(job_id, "status", "Separating instrumental and vocals with RoFormer...", phase="separate")
     command = [
         str(python), "-u", str(runner),
         "--repo", str(repo),
@@ -339,9 +339,9 @@ def run_roformer(job_id, source_path, output_dir):
         LOGGER.info("job=%s RoFormer: %s", job_id, line)
         last_line = line
         if "Normalizing" in line:
-            send_job(job_id, "status", "Preparing audio for RoFormer...")
+            send_job(job_id, "status", "Preparing audio for RoFormer...", phase="separate")
         elif "Separating vocals" in line:
-            send_job(job_id, "status", "RoFormer is separating vocals...")
+            send_job(job_id, "status", "RoFormer is separating vocals...", phase="separate")
     return_code = process.wait()
     LOGGER.info("job=%s RoFormer exited code=%s", job_id, return_code)
     if return_code != 0:
@@ -910,6 +910,9 @@ def start_lyrics_lookup(job_id, url, cookies, output_dir, requested_text, suppli
     state = {"lyrics": {"text": "", "segments": [], "source": "none"}}
 
     def lookup():
+        searching = not (requested_text or "").strip() and not (supplied_lyrics or {}).get("text")
+        if searching:
+            send_job(job_id, "monitorStart", "Searching lyrics...", phase="lyricsLookup")
         try:
             if (requested_text or "").strip():
                 lyrics = {
@@ -933,6 +936,9 @@ def start_lyrics_lookup(job_id, url, cookies, output_dir, requested_text, suppli
         except Exception as exc:
             state["error"] = str(exc)
             LOGGER.exception("job=%s concurrent lyric lookup failed", job_id)
+        finally:
+            if searching:
+                send_job(job_id, "monitorEnd", "", phase="lyricsLookup")
 
     thread = threading.Thread(target=lookup, name=f"lyrics-{job_id[:8]}", daemon=True)
     thread.start()

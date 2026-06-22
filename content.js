@@ -64,6 +64,7 @@
   let lyricsProcessing = false;
   let lyricsProcessingJobId = null;
   let monitorObserver = null;
+  const monitorActivities = new Map();
 
   function getYouTubeVideo() {
     return document.querySelector("video.html5-main-video, #movie_player video");
@@ -186,6 +187,7 @@
     if (!videoId || lyricsVideoId === videoId || lyricsFetchJobId) return;
     lyricsVideoId = videoId;
     lyricsFetchJobId = crypto.randomUUID();
+    setMonitorActivity(lyricsFetchJobId, "lyricsLookup", "Searching lyrics...");
     setProcessStatus("Looking for synchronized lyrics...", "busy");
     chrome.runtime.sendMessage({
       type: "dkaraoke-fetch-lyrics",
@@ -194,6 +196,7 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
+        clearMonitorJob(lyricsFetchJobId);
         lyricsFetchJobId = null;
         setProcessStatus(error || "Could not find online lyrics. You can enter them manually.", "info");
       }
@@ -209,6 +212,7 @@
     }
     lyricsProcessing = true;
     lyricsProcessingJobId = crypto.randomUUID();
+    setMonitorActivity(lyricsProcessingJobId, "timing", "Timestamping...");
     updateRefreshLyricsButton();
     setProcessing(processing);
     setProcessStatus("Refreshing word timing...", "busy");
@@ -220,6 +224,7 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
+        clearMonitorJob(lyricsProcessingJobId);
         lyricsProcessing = false;
         lyricsProcessingJobId = null;
         updateRefreshLyricsButton();
@@ -233,10 +238,19 @@
     return document.querySelector("#movie_player")?.classList.contains("ad-showing") || false;
   }
 
+  function positionMonitorStar() {
+    const frame = document.querySelector(".dkaraoke-monitor-frame");
+    const star = frame?.querySelector(".dkaraoke-monitor-star");
+    if (!frame || !star) return;
+    const bounds = frame.getBoundingClientRect();
+    star.style.left = `${bounds.left + bounds.width / 2}px`;
+    star.style.top = `${bounds.top + bounds.height / 2}px`;
+  }
+
   function updatePlaybackMonitor() {
-    const canvas = document.getElementById(MONITOR_ID);
+    const monitor = document.getElementById(MONITOR_ID);
     const status = document.getElementById(MONITOR_TEXT_ID);
-    if (!canvas || !status) return;
+    if (!monitor || !status) return;
 
     const playing = Boolean(
       enabled
@@ -247,50 +261,56 @@
       && syncedVideo.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
       && !isAdPlaying()
     );
-    const message = playing ? "playing!" : "wait...";
-    status.textContent = message;
+    const messages = Array.from(new Set(monitorActivities.values())).slice(-3);
+    if (!messages.length) messages.push(playing ? "Playing!" : "Wait...");
+    status.textContent = messages.join("; ");
+    monitor.dataset.count = String(messages.length);
+    monitor.classList.toggle("is-playing", playing && monitorActivities.size === 0);
+    monitor.replaceChildren(...messages.map((message) => {
+      const item = document.createElement("span");
+      item.className = "dkaraoke-monitor-message";
+      item.textContent = message;
+      return item;
+    }));
+    positionMonitorStar();
+  }
 
-    const size = Math.max(1, Math.round(canvas.getBoundingClientRect().width));
-    const scale = window.devicePixelRatio || 1;
-    const pixelSize = Math.max(1, Math.round(size * scale));
-    if (canvas.width !== pixelSize || canvas.height !== pixelSize) {
-      canvas.width = pixelSize;
-      canvas.height = pixelSize;
-    }
+  function setMonitorActivity(jobId, channel, message) {
+    if (!jobId || !channel) return;
+    const key = `${jobId}:${channel}`;
+    if (message) monitorActivities.set(key, message);
+    else monitorActivities.delete(key);
+    updatePlaybackMonitor();
+  }
 
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    context.setTransform(scale, 0, 0, scale, 0, 0);
-    context.clearRect(0, 0, size, size);
-    context.fillStyle = "#ffff00";
-    context.fillRect(0, 0, size, size);
-    const rayCount = 10;
-    for (let index = 0; index < rayCount; index += 1) {
-      if (index % 2 === 0) continue;
-      const start = (index / rayCount) * Math.PI * 2;
-      const end = ((index + 1) / rayCount) * Math.PI * 2;
-      context.beginPath();
-      context.moveTo(size / 2, size / 2);
-      context.arc(size / 2, size / 2, size, start, end);
-      context.closePath();
-      context.fillStyle = playing ? "#ff00b8" : "#d4d4d4";
-      context.fill();
+  function clearMonitorJob(jobId) {
+    if (!jobId) return;
+    for (const key of monitorActivities.keys()) {
+      if (key.startsWith(`${jobId}:`)) monitorActivities.delete(key);
     }
-    context.save();
-    context.translate(size / 2, size / 2);
-    context.rotate(-5 * Math.PI / 180);
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.font = `900 ${Math.max(27, Math.round(size * 0.15))}px Impact, Haettenschweiler, sans-serif`;
-    context.lineJoin = "round";
-    context.lineWidth = Math.max(4, size * 0.025);
-    context.strokeStyle = "#000000";
-    context.strokeText(message.toUpperCase(), 0, 0, size * 0.82);
-    context.fillStyle = playing ? "#00ffff" : "#ffffff";
-    context.shadowColor = playing ? "rgba(255, 255, 0, 0.9)" : "transparent";
-    context.shadowBlur = playing ? size * 0.08 : 0;
-    context.fillText(message.toUpperCase(), 0, 0, size * 0.82);
-    context.restore();
+    updatePlaybackMonitor();
+  }
+
+  function updateMonitorFromBackend(message) {
+    const phase = message.phase || "";
+    if (message.status === "monitorStart") {
+      setMonitorActivity(message.jobId, phase || "task", message.message || "Processing...");
+      return true;
+    }
+    if (message.status === "monitorEnd") {
+      setMonitorActivity(message.jobId, phase || "task", "");
+      return true;
+    }
+    if (phase === "download") setMonitorActivity(message.jobId, "audio", "Downloading...");
+    else if (["convert", "separate"].includes(phase)) setMonitorActivity(message.jobId, "audio", "Extracting...");
+    else if (phase === "lyrics") setMonitorActivity(message.jobId, "timing", "Timestamping...");
+
+    if (message.status === "lyricsPreview") setMonitorActivity(message.jobId, "lyricsLookup", "");
+    if (message.status === "stemsReady") setMonitorActivity(message.jobId, "audio", "");
+    if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"].includes(message.status)) {
+      clearMonitorJob(message.jobId);
+    }
+    return false;
   }
 
   function setProcessProgress(value = null) {
@@ -335,6 +355,7 @@
     cacheCheckComplete = false;
     karaokizeAvailable = false;
     cacheCheckJobId = crypto.randomUUID();
+    setMonitorActivity(cacheCheckJobId, "cache", "Checking cache...");
     setProcessing(false);
     setProcessStatus("Checking saved karaoke results...", "busy");
     chrome.runtime.sendMessage({
@@ -344,6 +365,7 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
+        clearMonitorJob(cacheCheckJobId);
         cacheCheckJobId = null;
         cacheCheckComplete = true;
         karaokizeAvailable = true;
@@ -692,6 +714,7 @@
 
     activeJobId = crypto.randomUUID();
     activeJobStemsReady = false;
+    setMonitorActivity(activeJobId, "audio", "Connecting...");
     setProcessing(true);
     setProcessStatus("Connecting to the downloader...", "busy");
 
@@ -710,6 +733,7 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
+        clearMonitorJob(activeJobId);
         activeJobId = null;
         setProcessing(false);
         setProcessStatus(error || "Could not start the downloader.", "error");
@@ -747,16 +771,21 @@
 
       const monitor = document.createElement("div");
       monitor.className = "dkaraoke-monitor-frame";
-      const canvas = document.createElement("canvas");
-      canvas.id = MONITOR_ID;
-      canvas.setAttribute("aria-hidden", "true");
+      const star = document.createElement("div");
+      star.className = "dkaraoke-monitor-star";
+      star.setAttribute("aria-hidden", "true");
+      star.style.setProperty("--dk-star-image", `url("${chrome.runtime.getURL("star.svg")}")`);
+      const display = document.createElement("div");
+      display.id = MONITOR_ID;
+      display.className = "dkaraoke-monitor-display";
+      display.setAttribute("aria-hidden", "true");
       const monitorText = document.createElement("span");
       monitorText.id = MONITOR_TEXT_ID;
       monitorText.className = "dkaraoke-visually-hidden";
       monitorText.setAttribute("role", "status");
       monitorText.setAttribute("aria-live", "polite");
       monitorText.textContent = "wait...";
-      monitor.append(canvas, monitorText);
+      monitor.append(star, display, monitorText);
       leftPanel.appendChild(monitor);
       columns.insertBefore(leftPanel, primary);
     }
@@ -871,7 +900,7 @@
 
     if (monitorObserver) monitorObserver.disconnect();
     monitorObserver = new ResizeObserver(updatePlaybackMonitor);
-    monitorObserver.observe(document.getElementById(MONITOR_ID));
+    monitorObserver.observe(document.querySelector(".dkaraoke-monitor-frame"));
     updateWorkspaceLayout();
     updatePlaybackMonitor();
 
@@ -966,6 +995,7 @@
   }
 
   function remountAfterNavigation() {
+    monitorActivities.clear();
     processing = false;
     cacheCheckJobId = null;
     cacheCheckComplete = false;
@@ -992,6 +1022,8 @@
   });
 
   document.addEventListener("yt-navigate-finish", remountAfterNavigation);
+  window.addEventListener("scroll", positionMonitorStar, { passive: true });
+  window.addEventListener("resize", positionMonitorStar);
   document.addEventListener("visibilitychange", () => {
     if (
       document.visibilityState === "visible"
@@ -1005,6 +1037,7 @@
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message?.type !== "dkaraoke-status") return;
+    if (updateMonitorFromBackend(message)) return;
     if (cacheCheckJobId && message.jobId === cacheCheckJobId) {
       if (message.status === "cacheCheck") {
         cacheCheckJobId = null;
@@ -1085,6 +1118,7 @@
       );
     } else if (message.status === "stemsReady") {
       if (!message.instrumentalUrl || !message.vocalsUrl) {
+        clearMonitorJob(activeJobId);
         activeJobId = null;
         setProcessing(false);
         setProcessStatus("The backend did not return both separated audio tracks.", "error");

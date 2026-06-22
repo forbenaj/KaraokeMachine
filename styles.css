@@ -119,18 +119,104 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
 .dkaraoke-monitor-frame {
   position: relative;
   width: min(100%, 520px);
-  overflow: hidden;
+  overflow: visible;
   align-self: center;
   aspect-ratio: 1;
   border-radius: 16px;
-  background: rgba(125, 150, 190, 0.24);
+  background: transparent;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 9px 24px rgba(89, 72, 145, 0.14);
 }
 
+.dkaraoke-monitor-frame::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  border: 4px solid #000000;
+  box-sizing: border-box;
+}
+
+.dkaraoke-monitor-star {
+  position: fixed;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 180vmax;
+  max-width: none;
+  aspect-ratio: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    var(--dk-star-color, #ff00b8) 0 12%,
+    color-mix(in srgb, var(--dk-star-color, #ff00b8) 92%, transparent) 18%,
+    color-mix(in srgb, var(--dk-star-color, #ff00b8) 60%, transparent) 30%,
+    color-mix(in srgb, var(--dk-star-color, #ff00b8) 20%, transparent) 42%,
+    transparent 55%
+  );
+  opacity: 1;
+  transform: translate(-50%, -50%) rotate(0turn);
+  transform-origin: center;
+  -webkit-mask: var(--dk-star-image) center / contain no-repeat;
+  mask: var(--dk-star-image) center / contain no-repeat;
+  animation: dkaraoke-monitor-spin 28s linear infinite;
+  will-change: transform;
+}
+
 #dkaraoke-monitor {
-  display: block;
+  position: relative;
+  z-index: 2;
+  display: flex;
   width: 100%;
   height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7%;
+  padding: 9%;
+  box-sizing: border-box;
+  transform: rotate(-5deg);
+}
+
+.dkaraoke-monitor-message {
+  min-width: 0;
+  color: #ffffff;
+  font: 900 clamp(27px, 3.2vw, 58px)/0.92 Impact, Haettenschweiler, "Arial Black", sans-serif;
+  text-align: center;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  -webkit-text-stroke: clamp(2px, 0.3vw, 5px) #000000;
+  paint-order: stroke fill;
+  text-shadow: 4px 4px 0 #000000;
+}
+
+#dkaraoke-monitor.is-playing .dkaraoke-monitor-message {
+  color: #00ffff;
+  filter: drop-shadow(0 0 18px #ffff00);
+}
+
+#dkaraoke-monitor[data-count="2"],
+#dkaraoke-monitor[data-count="3"] {
+  justify-content: space-around;
+  gap: 5%;
+}
+
+#dkaraoke-monitor[data-count="2"] .dkaraoke-monitor-message {
+  max-width: 44%;
+  font-size: clamp(22px, 2.25vw, 40px);
+}
+
+#dkaraoke-monitor[data-count="3"] .dkaraoke-monitor-message {
+  max-width: 29%;
+  font-size: clamp(17px, 1.6vw, 30px);
+}
+
+@keyframes dkaraoke-monitor-spin {
+  to { transform: translate(-50%, -50%) rotate(1turn); }
+}
+
+html:has(.html5-video-player.ytp-fullscreen) .dkaraoke-monitor-star,
+html:has(:fullscreen) .dkaraoke-monitor-star {
+  display: none !important;
 }
 
 .dkaraoke-visually-hidden {
@@ -498,6 +584,7 @@ html[dark] #dkaraoke-refresh-lyrics {
   #dkaraoke-toggle { transition: none; }
   #dkaraoke-process-progress-fill { transition: none; }
   #dkaraoke-process-progress.is-indeterminate #dkaraoke-process-progress-fill { animation: none; }
+  .dkaraoke-monitor-star { animation: none; }
 }
 
 @media (max-width: 900px) {
@@ -665,10 +752,18 @@ html[dark] #dkaraoke-right-panel {
 
 .dkaraoke-monitor-frame {
   width: calc(100% - 10px);
-  border: 4px solid var(--dk-ink);
+  z-index: 0;
+  border: 0;
   border-radius: 0;
-  background: var(--dk-yellow);
+  background: transparent;
   box-shadow: var(--dk-panel-shadow);
+}
+
+#dkaraoke-menu,
+#dkaraoke-right-rail,
+html.dkaraoke-enabled ytd-watch-flexy #columns > #primary {
+  position: relative;
+  z-index: 1;
 }
 
 #dkaraoke-menu,
