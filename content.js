@@ -534,7 +534,10 @@
           startSyncMonitor();
         }
       })
-      .catch(() => {
+      .catch((error) => {
+        // Seeking can abort an in-flight play() promise. That is a transient
+        // player state, not a failure of the selected stem.
+        if (error?.name === "AbortError" || syncedVideo?.seeking) return;
         if (playBlocked) return;
         playBlocked = true;
         stemEnabled = { instrumental: true, vocals: true };
@@ -608,10 +611,12 @@
       updatePlaybackMonitor();
     }, options);
     video.addEventListener("seeking", () => {
+      clearCustomAudioInterruptionTimer();
       stopCustomAudio();
       updatePlaybackMonitor();
     }, options);
     video.addEventListener("seeked", () => {
+      clearCustomAudioInterruptionTimer();
       syncCustomAudio(true);
       if (!video.paused) playCustomAudio();
       updatePlaybackMonitor();
@@ -684,7 +689,12 @@
         clearCustomAudioInterruptionTimer();
         customAudioInterruptionTimer = setTimeout(() => {
           customAudioInterruptionTimer = null;
-          if (customAudio[stem] !== audio || sourceMode !== "custom" || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) return;
+          if (
+            customAudio[stem] !== audio
+            || sourceMode !== "custom"
+            || syncedVideo?.seeking
+            || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
+          ) return;
           stemEnabled = { instrumental: true, vocals: true };
           setSourceMode("original");
           setProcessStatus("Separated audio was interrupted. Using original YouTube audio.", "info");

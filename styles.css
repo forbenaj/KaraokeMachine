@@ -139,7 +139,7 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
 
 .dkaraoke-monitor-star {
   position: fixed;
-  z-index: 0;
+  z-index: -1;
   top: 0;
   left: 0;
   width: 180vmax;
@@ -216,6 +216,16 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
 html:has(.html5-video-player.ytp-fullscreen) .dkaraoke-monitor-star,
 html:has(:fullscreen) .dkaraoke-monitor-star {
   display: none !important;
+}
+
+html.dkaraoke-enabled ytd-watch-flexy[theater] #player-container-outer,
+html.dkaraoke-enabled ytd-watch-flexy[theater-requested_] #player-container-outer,
+html.dkaraoke-enabled:has(.html5-video-player.ytp-big-mode) #player-container-outer,
+html.dkaraoke-enabled ytd-watch-flexy #full-bleed-container,
+html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
 }
 
 .dkaraoke-visually-hidden {
