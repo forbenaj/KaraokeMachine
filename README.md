@@ -4,7 +4,7 @@ DKaraoKe is a Windows-first Chrome MV3 extension with a local Python backend. It
 
 ## Install
 
-`install.ps1` creates `.venv-tools`, installs or updates `yt-dlp`, validates FFmpeg, and registers the native host for the extension. If FFmpeg is missing, it installs Gyan.FFmpeg with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
+`install.ps1` creates `.venv-tools`, installs or updates `yt-dlp` with its YouTube JavaScript solver, validates Node.js and FFmpeg, and registers the native host for the extension. Missing Node.js or FFmpeg dependencies are installed with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
 
 From this directory, install the backend and the RoFormer/Whisper runtime:
 
@@ -40,17 +40,20 @@ Pressing **Karaokize!** starts the missing work. If lyrics are absent, LRCLIB lo
 
 ### Playback Controls
 
-The left section contains a placeholder for a playful visual monitor and three toggle buttons:
+The left section contains a playful visual monitor and two audio toggle buttons:
 
 - **Instrumental:** play the synchronized instrumental stem.
 - **Voice only:** play the synchronized vocal stem.
-- **Lyrics:** show or hide synchronized lyrics over the video.
 
 ### Lyrics Editor
 
-The right section contans the lyrics editor and a button to refresh lyrics:
+The right section contains the lyrics editor. Its compact control section sits below the editor:
 
+- **Lyrics:** show or hide synchronized lyrics over the video.
+- **Lyrics style:** choose the original arcade treatment or a simpler subtitle treatment.
 - **Refresh lyrics:** rebuild Whisper timing for edited or pasted lyrics using the existing vocal stem.
+
+Lyrics search, extraction, and timing messages appear in the lyrics header; the left monitor remains dedicated to audio preparation and playback.
 
 YouTube remains responsible for play, pause, seeking, playback speed, volume, buffering, ads, and navigation. DKaraoKe follows those changes and corrects small timing drift. If local stem playback is interrupted, it falls back to the original YouTube audio.
 
@@ -66,8 +69,8 @@ Important cached files include:
 
 ```text
 audio.mp3
-separated\mel_band_roformer\audio\instrumental.wav
-separated\mel_band_roformer\audio\vocals.wav
+separated\mel_band_roformer\audio\instrumental.mp3
+separated\mel_band_roformer\audio\vocals.mp3
 lrclib_lyrics.json
 lyrics.json
 ```
@@ -128,7 +131,7 @@ YouTube
     -> hidden HTMLAudioElement synchronized to YouTube <video>
 ```
 
-RoFormer outputs stereo 44.1 kHz float WAV files from the source revision pinned by `setup-roformer.ps1`.
+RoFormer produces temporary stereo 44.1 kHz float WAV files. The host converts both stems to 192 kbps stereo MP3, verifies them, and then removes the WAV files. Existing cached WAV stems are migrated automatically when next used.
 
 ## Uninstall
 

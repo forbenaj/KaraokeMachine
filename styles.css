@@ -330,11 +330,44 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
 
 .dkaraoke-lyrics-heading {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
 }
 
+.dkaraoke-lyrics-heading label {
+  font: 900 32px/0.95 Impact, Haettenschweiler, "Arial Black", sans-serif;
+  letter-spacing: 0.03em;
+}
+
+#dkaraoke-lyrics-status {
+  margin: 0;
+  color: var(--yt-spec-text-secondary, #596275);
+  font: 500 11px/1.35 system-ui, sans-serif;
+}
+
+#dkaraoke-lyrics-status[data-state="busy"] { color: #5b00b7; }
+#dkaraoke-lyrics-status[data-state="success"] { color: #006b49; }
+#dkaraoke-lyrics-status[data-state="error"] { color: #b00020; }
+
+.dkaraoke-lyrics-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 9px;
+  padding: 12px;
+  border-top: 1px solid rgba(89, 75, 140, 0.14);
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.dkaraoke-lyrics-style-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+#dkaraoke-lyrics-style,
+#dkaraoke-lyrics,
 #dkaraoke-refresh-lyrics {
   min-height: 28px;
   padding: 0 10px;
@@ -346,6 +379,33 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
   cursor: pointer;
 }
 
+#dkaraoke-lyrics {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-transform: uppercase;
+}
+
+#dkaraoke-lyrics::after {
+  content: "";
+  width: 34px;
+  height: 17px;
+  border: 2px solid currentColor;
+  background: radial-gradient(circle at 25% 50%, #ffffff 0 5px, transparent 6px), #bcbcbc;
+}
+
+#dkaraoke-lyrics.is-active::after {
+  background: radial-gradient(circle at 75% 50%, #ffffff 0 5px, transparent 6px), #d4689c;
+}
+
+#dkaraoke-lyrics-style {
+  min-width: 100px;
+  color: var(--yt-spec-text-primary, #172033);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+#dkaraoke-lyrics:disabled,
 #dkaraoke-refresh-lyrics:disabled {
   cursor: not-allowed;
   opacity: 0.5;
@@ -403,6 +463,28 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
 
 #dkaraoke-lyrics-overlay span.is-current {
   color: #fff;
+}
+
+#dkaraoke-lyrics-overlay[data-style="simple"] {
+  top: auto;
+  bottom: 12%;
+  transform: translateX(-50%);
+  color: #ffffff;
+  font: 700 clamp(22px, 3.2vw, 44px)/1.3 Arial, sans-serif;
+  letter-spacing: 0;
+  -webkit-text-stroke: 0;
+  text-shadow: 0 2px 5px #000000, 0 0 10px #000000;
+}
+
+#dkaraoke-lyrics-overlay[data-style="simple"] span.is-sung {
+  color: #d8d8d8;
+  text-shadow: 0 2px 5px #000000, 0 0 10px #000000;
+}
+
+#dkaraoke-lyrics-overlay[data-style="simple"] span.is-current {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
 }
 
 #dkaraoke-process-status {
@@ -911,19 +993,34 @@ html[dark] .dkaraoke-action-row {
 }
 
 .dkaraoke-lyrics-heading label {
-  font: 800 15px/1.2 var(--dk-ui-font);
-  letter-spacing: 0.08em;
+  color: #ffffff;
+  font: 900 42px/0.9 var(--dk-display-font);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 var(--dk-ink);
+}
+
+#dkaraoke-lyrics-status {
+  color: var(--dk-ink);
+  font: 700 10px/1.3 var(--dk-ui-font);
+  letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 
-.dkaraoke-lyrics-editor small {
-  display: block;
-  margin: 3px 0 0;
-  color: var(--dk-ink);
-  font-size: 10px;
-  letter-spacing: 0.03em;
+.dkaraoke-lyrics-controls {
+  gap: 10px;
+  padding: 12px;
+  border-top: 4px solid var(--dk-ink);
+  background: var(--dk-yellow);
+  font: 700 11px/1 var(--dk-ui-font);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
+#dkaraoke-lyrics-style,
+#dkaraoke-lyrics,
 #dkaraoke-refresh-lyrics,
 html[dark] #dkaraoke-refresh-lyrics {
   min-height: 32px;
@@ -934,6 +1031,22 @@ html[dark] #dkaraoke-refresh-lyrics {
   box-shadow: var(--dk-small-shadow);
   font: 700 10px/1 var(--dk-ui-font);
   text-transform: uppercase;
+}
+
+#dkaraoke-lyrics::after {
+  width: 38px;
+  height: 19px;
+  border: 3px solid var(--dk-ink);
+}
+
+#dkaraoke-lyrics.is-active::after {
+  background: radial-gradient(circle at 75% 50%, #ffffff 0 6px, transparent 7px), var(--dk-magenta);
+}
+
+#dkaraoke-lyrics-style {
+  background: var(--dk-paper);
+  box-shadow: var(--dk-small-shadow);
+  font: 700 10px/1 var(--dk-ui-font);
 }
 
 #dkaraoke-lyrics-text,

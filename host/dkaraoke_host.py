@@ -35,8 +35,10 @@ AUTH_ERROR_MARKERS = (
 AUDIO_FILES = {}
 AUDIO_FILES_LOCK = threading.Lock()
 SEND_MESSAGE_LOCK = threading.Lock()
+STEM_TRANSCODE_LOCK = threading.Lock()
 AUDIO_SERVER = None
 AUDIO_SERVER_THREAD = None
+STEM_MP3_BITRATE = "192k"
 LYRICS_TIMING_VERSION = 3
 LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
 LRC_TIMESTAMP_RE = re.compile(r"\[(\d+):(\d{2}(?:\.\d{1,3})?)\]")
@@ -206,6 +208,101 @@ def is_complete_file(path):
     return path.is_file() and path.stat().st_size > 0
 
 
+def stem_paths(stem_dir, suffix=".mp3"):
+    return stem_dir / f"instrumental{suffix}", stem_dir / f"vocals{suffix}"
+
+
+def validate_stem_mp3(path):
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    result = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=codec_name,sample_rate,channels:format=duration",
+            "-of", "json", str(path),
+        ],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        creationflags=creationflags,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f"ffprobe could not validate {path.name}.")
+    try:
+        payload = json.loads(result.stdout)
+        stream = payload["streams"][0]
+        duration = float(payload["format"]["duration"])
+    except (KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"ffprobe returned invalid metadata for {path.name}.") from exc
+    if (
+        stream.get("codec_name") != "mp3"
+        or int(stream.get("sample_rate", 0)) != 44100
+        or int(stream.get("channels", 0)) != 2
+        or duration <= 0
+    ):
+        raise RuntimeError(f"Compressed stem has invalid audio metadata: {path.name}.")
+
+
+def compress_stems(job_id, instrumental_wav, vocals_wav):
+    """Encode both WAV stems, publish them atomically, then remove the WAV pair."""
+    mp3_paths = stem_paths(instrumental_wav.parent)
+    wav_paths = (instrumental_wav, vocals_wav)
+    temporary_paths = tuple(
+        path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp.mp3") for path in mp3_paths
+    )
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+
+    with STEM_TRANSCODE_LOCK:
+        if all(is_complete_file(path) for path in mp3_paths):
+            for path in wav_paths:
+                path.unlink(missing_ok=True)
+            return mp3_paths
+        if not all(is_complete_file(path) for path in wav_paths):
+            raise FileNotFoundError("Both WAV stems are required before MP3 compression.")
+
+        send_job(job_id, "status", "Compressing separated stems to MP3...", phase="convert")
+        try:
+            for source, temporary in zip(wav_paths, temporary_paths):
+                result = subprocess.run(
+                    [
+                        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                        "-i", str(source), "-vn", "-map", "0:a:0",
+                        "-c:a", "libmp3lame", "-b:a", STEM_MP3_BITRATE,
+                        "-ar", "44100", "-ac", "2", "-write_xing", "1",
+                        str(temporary),
+                    ],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                    creationflags=creationflags,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or f"FFmpeg could not compress {source.name}.")
+                validate_stem_mp3(temporary)
+
+            for temporary, destination in zip(temporary_paths, mp3_paths):
+                os.replace(temporary, destination)
+            for path in wav_paths:
+                path.unlink(missing_ok=True)
+        finally:
+            for path in temporary_paths:
+                path.unlink(missing_ok=True)
+
+    LOGGER.info("job=%s compressed stems bitrate=%s directory=%s", job_id, STEM_MP3_BITRATE, instrumental_wav.parent)
+    return mp3_paths
+
+
+def resolve_cached_stems(job_id, stem_dir):
+    mp3_paths = stem_paths(stem_dir)
+    wav_paths = stem_paths(stem_dir, ".wav")
+    if all(is_complete_file(path) for path in mp3_paths):
+        for path in wav_paths:
+            path.unlink(missing_ok=True)
+        return mp3_paths
+    if all(is_complete_file(path) for path in wav_paths):
+        try:
+            return compress_stems(job_id, *wav_paths)
+        except Exception:
+            LOGGER.exception("job=%s could not migrate cached WAV stems", job_id)
+            return wav_paths
+    return mp3_paths
+
+
 def read_json_cache(path):
     if not is_complete_file(path):
         return None
@@ -257,8 +354,7 @@ def check_cache(job_id, raw_url):
     output_dir = app_download_dir(video_id)
     final_path = output_dir / "audio.mp3"
     stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
-    instrumental_path = stem_dir / "instrumental.wav"
-    vocals_path = stem_dir / "vocals.wav"
+    instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
 
     # Whisper-refined timings are the local authority. LRCLIB is the immediate
     # fallback when refinement has not run yet.
@@ -348,11 +444,10 @@ def run_roformer(job_id, source_path, output_dir):
         raise RuntimeError(last_line or f"RoFormer exited with code {return_code}.")
 
     stem_dir = output_dir / source_path.stem
-    instrumental_path = stem_dir / "instrumental.wav"
-    vocals_path = stem_dir / "vocals.wav"
+    instrumental_path, vocals_path = stem_paths(stem_dir, ".wav")
     if not instrumental_path.is_file() or not vocals_path.is_file():
         raise FileNotFoundError("RoFormer finished, but its stem files were not found.")
-    return instrumental_path, vocals_path
+    return compress_stems(job_id, instrumental_path, vocals_path)
 
 
 def stop_audio_server():
@@ -423,10 +518,17 @@ def write_cookie_file(cookies):
 
 
 def require_tools():
-    missing = [name for name in ("yt-dlp", "ffmpeg", "ffprobe") if not shutil.which(name)]
+    missing = [name for name in ("yt-dlp", "ffmpeg", "ffprobe", "node") if not shutil.which(name)]
     if missing:
         raise FileNotFoundError(f"Missing required tool(s): {', '.join(missing)}. Run install.ps1, then restart Chrome.")
     return shutil.which("yt-dlp")
+
+
+def ytdlp_runtime_args():
+    node = shutil.which("node")
+    if not node:
+        raise FileNotFoundError("Node.js is required to resolve YouTube media formats. Run install.ps1, then restart Chrome.")
+    return ["--js-runtimes", f"node:{node}"]
 
 
 def has_auth_error(output_text):
@@ -514,7 +616,10 @@ def choose_caption_track(info):
 
 def run_ytdlp_json(url, cookie_path=None):
     yt_dlp = require_tools()
-    command = [yt_dlp, "--ignore-config", "--no-playlist", "--skip-download", "--no-warnings", "--dump-single-json"]
+    command = [
+        yt_dlp, "--ignore-config", *ytdlp_runtime_args(),
+        "--no-playlist", "--skip-download", "--no-warnings", "--dump-single-json",
+    ]
     if cookie_path:
         command.extend(["--cookies", str(cookie_path)])
     command.append(url)
@@ -894,7 +999,8 @@ def refresh_lyrics(job_id, raw_url, requested_text):
     url = validate_youtube_url(raw_url)
     video_id = video_id_from_url(url)
     output_dir = app_download_dir(video_id)
-    vocals_path = output_dir / "separated" / "mel_band_roformer" / "audio" / "vocals.wav"
+    stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+    _, vocals_path = resolve_cached_stems(job_id, stem_dir)
     if not is_complete_file(vocals_path):
         raise FileNotFoundError("Karaokize this song before refreshing lyric timing.")
     if not (requested_text or "").strip():
@@ -967,8 +1073,7 @@ def run_download(job_id, raw_url, cookies, requested_text="", supplied_lyrics=No
     final_path = output_dir / "audio.mp3"
     separated_dir = output_dir / "separated" / "mel_band_roformer"
     stem_dir = separated_dir / final_path.stem
-    instrumental_path = stem_dir / "instrumental.wav"
-    vocals_path = stem_dir / "vocals.wav"
+    instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
     lyrics_thread, lyrics_state = start_lyrics_lookup(
         job_id, url, cookies, output_dir, requested_text, supplied_lyrics,
     )
@@ -997,6 +1102,7 @@ def run_download(job_id, raw_url, cookies, requested_text="", supplied_lyrics=No
     base_command = [
         yt_dlp,
         "--ignore-config",
+        *ytdlp_runtime_args(),
         "--newline",
         "--no-playlist",
         "--force-overwrites",

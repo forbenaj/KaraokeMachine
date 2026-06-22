@@ -71,7 +71,7 @@ class PipelineOrderingTests(unittest.TestCase):
             patch.object(host, "complete_job", side_effect=lambda *args, **kwargs: events.append("complete")),
         ):
             host.publish_stems_then_refine_lyrics(
-                "job", "video", Path("audio.mp3"), Path("instrumental.wav"), Path("vocals.wav"),
+                "job", "video", Path("audio.mp3"), Path("instrumental.mp3"), Path("vocals.mp3"),
                 Path("output"), "", FakeThread(), {"lyrics": {"text": "x", "segments": [], "source": "lrclib"}},
             )
 
@@ -82,7 +82,7 @@ class PipelineOrderingTests(unittest.TestCase):
             output_dir = Path(temporary)
             stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
             stem_dir.mkdir(parents=True)
-            for path in (output_dir / "audio.mp3", stem_dir / "instrumental.wav", stem_dir / "vocals.wav"):
+            for path in (output_dir / "audio.mp3", stem_dir / "instrumental.mp3", stem_dir / "vocals.mp3"):
                 path.write_bytes(b"audio")
             (output_dir / "lyrics.json").write_text(json.dumps({
                 "text": "Whisper words", "segments": [{"start_time": 0}],
@@ -103,6 +103,35 @@ class PipelineOrderingTests(unittest.TestCase):
             self.assertEqual(payload["lyrics"]["text"], "Whisper words")
             self.assertTrue(payload["hasLyrics"])
             self.assertTrue(payload["hasStems"])
+
+    def test_legacy_wav_stems_are_migrated_during_cache_check(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            (output_dir / "audio.mp3").write_bytes(b"audio")
+            wav_paths = host.stem_paths(stem_dir, ".wav")
+            for path in wav_paths:
+                path.write_bytes(b"wave")
+            mp3_paths = host.stem_paths(stem_dir)
+
+            def migrate(_job_id, *_paths):
+                for path in mp3_paths:
+                    path.write_bytes(b"mp3")
+                return mp3_paths
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "compress_stems", side_effect=migrate) as compress_stems,
+                patch.object(host, "register_audio", side_effect=lambda path: f"audio://{path.name}"),
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.check_cache("job", "https://www.youtube.com/watch?v=abcdefghijk")
+
+            compress_stems.assert_called_once_with("job", *wav_paths)
+            payload = send_job.call_args.kwargs
+            self.assertTrue(payload["hasStems"])
+            self.assertEqual(payload["instrumentalUrl"], "audio://instrumental.mp3")
 
     def test_karaokize_lookup_uses_lrclib_directly(self):
         expected = {"text": "LRCLIB words", "segments": [], "source": "lrclib"}

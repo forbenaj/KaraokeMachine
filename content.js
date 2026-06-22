@@ -15,6 +15,8 @@
   const LYRICS_ID = "dkaraoke-lyrics";
   const LYRICS_TEXT_ID = "dkaraoke-lyrics-text";
   const REFRESH_LYRICS_ID = "dkaraoke-refresh-lyrics";
+  const LYRICS_STATUS_ID = "dkaraoke-lyrics-status";
+  const LYRICS_STYLE_ID = "dkaraoke-lyrics-style";
   const LYRICS_OVERLAY_ID = "dkaraoke-lyrics-overlay";
   const STEMS = ["instrumental", "vocals"];
   // A separate HTMLAudioElement reaches the speakers slightly after YouTube's
@@ -53,6 +55,7 @@
   let syncMonitorId = null;
   let customAudioInterruptionTimer = null;
   let lyricsEnabled = true;
+  let lyricsStyle = "arcade";
   let lyricsReady = false;
   let lyricsText = "";
   let lyricSegments = [];
@@ -86,7 +89,24 @@
       overlay.hidden = true;
       player.appendChild(overlay);
     }
+    overlay.dataset.style = lyricsStyle;
     return overlay;
+  }
+
+  function setLyricsStatus(message, state = "idle") {
+    const status = document.getElementById(LYRICS_STATUS_ID);
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.state = state;
+  }
+
+  function setLyricsStyle(nextStyle, persist = true) {
+    lyricsStyle = nextStyle === "simple" ? "simple" : "arcade";
+    const overlay = document.getElementById(LYRICS_OVERLAY_ID);
+    if (overlay) overlay.dataset.style = lyricsStyle;
+    const selector = document.getElementById(LYRICS_STYLE_ID);
+    if (selector) selector.value = lyricsStyle;
+    if (persist) chrome.storage.local.set({ dkaraokeLyricsStyle: lyricsStyle });
   }
 
   function activeLyricSegment(time) {
@@ -187,8 +207,7 @@
     if (!videoId || lyricsVideoId === videoId || lyricsFetchJobId) return;
     lyricsVideoId = videoId;
     lyricsFetchJobId = crypto.randomUUID();
-    setMonitorActivity(lyricsFetchJobId, "lyricsLookup", "Searching lyrics...");
-    setProcessStatus("Looking for synchronized lyrics...", "busy");
+    setLyricsStatus("Searching for synchronized lyrics...", "busy");
     chrome.runtime.sendMessage({
       type: "dkaraoke-fetch-lyrics",
       jobId: lyricsFetchJobId,
@@ -196,9 +215,8 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
-        clearMonitorJob(lyricsFetchJobId);
         lyricsFetchJobId = null;
-        setProcessStatus(error || "Could not find online lyrics. You can enter them manually.", "info");
+        setLyricsStatus(error || "Could not find online lyrics. You can enter them manually.", "info");
       }
     });
   }
@@ -207,15 +225,14 @@
     if (processing || lyricsProcessing) return;
     const text = document.getElementById(LYRICS_TEXT_ID)?.value.trim() || "";
     if (!text) {
-      setProcessStatus("Enter lyrics before refreshing their timing.", "info");
+      setLyricsStatus("Enter lyrics before refreshing their timing.", "info");
       return;
     }
     lyricsProcessing = true;
     lyricsProcessingJobId = crypto.randomUUID();
-    setMonitorActivity(lyricsProcessingJobId, "timing", "Timestamping...");
     updateRefreshLyricsButton();
     setProcessing(processing);
-    setProcessStatus("Refreshing word timing...", "busy");
+    setLyricsStatus("Refreshing word timing...", "busy");
     chrome.runtime.sendMessage({
       type: "dkaraoke-refresh-lyrics",
       jobId: lyricsProcessingJobId,
@@ -224,12 +241,11 @@
     }, (response) => {
       const error = chrome.runtime.lastError?.message || response?.error;
       if (!response?.ok || error) {
-        clearMonitorJob(lyricsProcessingJobId);
         lyricsProcessing = false;
         lyricsProcessingJobId = null;
         updateRefreshLyricsButton();
         setProcessing(processing);
-        setProcessStatus(error || "Could not refresh lyric timing.", "error");
+        setLyricsStatus(error || "Could not refresh lyric timing.", "error");
       }
     });
   }
@@ -293,6 +309,12 @@
 
   function updateMonitorFromBackend(message) {
     const phase = message.phase || "";
+    if (["lyrics", "lyricsLookup"].includes(phase)) {
+      if (message.status !== "monitorEnd" && message.message) {
+        setLyricsStatus(message.message, message.status === "error" ? "error" : "busy");
+      }
+      return message.status === "monitorStart" || message.status === "monitorEnd";
+    }
     if (message.status === "monitorStart") {
       setMonitorActivity(message.jobId, phase || "task", message.message || "Processing...");
       return true;
@@ -303,9 +325,6 @@
     }
     if (phase === "download") setMonitorActivity(message.jobId, "audio", "Downloading...");
     else if (["convert", "separate"].includes(phase)) setMonitorActivity(message.jobId, "audio", "Extracting...");
-    else if (phase === "lyrics") setMonitorActivity(message.jobId, "timing", "Timestamping...");
-
-    if (message.status === "lyricsPreview") setMonitorActivity(message.jobId, "lyricsLookup", "");
     if (message.status === "stemsReady") setMonitorActivity(message.jobId, "audio", "");
     if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"].includes(message.status)) {
       clearMonitorJob(message.jobId);
@@ -840,27 +859,25 @@
         instruments.appendChild(toggle);
       }
 
-      const lyricsToggle = document.createElement("button");
-      lyricsToggle.id = LYRICS_ID;
-      lyricsToggle.type = "button";
-      lyricsToggle.textContent = "Lyrics";
-      lyricsToggle.disabled = true;
-      lyricsToggle.addEventListener("click", toggleLyrics);
-      instruments.appendChild(lyricsToggle);
-
       const lyricsEditor = document.createElement("div");
       lyricsEditor.className = "dkaraoke-lyrics-editor";
       const lyricsHeading = document.createElement("div");
       lyricsHeading.className = "dkaraoke-lyrics-heading";
       const lyricsLabel = document.createElement("label");
       lyricsLabel.htmlFor = LYRICS_TEXT_ID;
-      lyricsLabel.innerHTML = "Lyrics <small>Edit, then refresh timing</small>";
+      lyricsLabel.textContent = "LYRICS";
+      const lyricsStatus = document.createElement("p");
+      lyricsStatus.id = LYRICS_STATUS_ID;
+      lyricsStatus.dataset.state = "idle";
+      lyricsStatus.setAttribute("aria-live", "polite");
+      lyricsStatus.textContent = "Edit lyrics, then refresh timing.";
+      lyricsHeading.append(lyricsLabel, lyricsStatus);
+
       const refreshButton = document.createElement("button");
       refreshButton.id = REFRESH_LYRICS_ID;
       refreshButton.type = "button";
       refreshButton.textContent = "Refresh lyrics";
       refreshButton.addEventListener("click", refreshLyrics);
-      lyricsHeading.append(lyricsLabel, refreshButton);
       const lyricsTextarea = document.createElement("textarea");
       lyricsTextarea.id = LYRICS_TEXT_ID;
       lyricsTextarea.placeholder = "YouTube or LRCLIB lyrics will appear here when available. You can also paste or type lyrics.";
@@ -869,7 +886,35 @@
         lyricsText = lyricsTextarea.value;
         updateRefreshLyricsButton();
       });
-      lyricsEditor.append(lyricsHeading, lyricsTextarea);
+      const lyricsControls = document.createElement("div");
+      lyricsControls.className = "dkaraoke-lyrics-controls";
+
+      const lyricsToggle = document.createElement("button");
+      lyricsToggle.id = LYRICS_ID;
+      lyricsToggle.type = "button";
+      lyricsToggle.textContent = "Lyrics";
+      lyricsToggle.disabled = true;
+      lyricsToggle.addEventListener("click", toggleLyrics);
+
+      const styleLabel = document.createElement("label");
+      styleLabel.htmlFor = LYRICS_STYLE_ID;
+      styleLabel.textContent = "Lyrics style";
+      const styleSelector = document.createElement("select");
+      styleSelector.id = LYRICS_STYLE_ID;
+      for (const [value, label] of [["arcade", "Arcade"], ["simple", "Simple"]]) {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = label;
+        styleSelector.appendChild(option);
+      }
+      styleSelector.value = lyricsStyle;
+      styleSelector.addEventListener("change", () => setLyricsStyle(styleSelector.value));
+      const styleField = document.createElement("div");
+      styleField.className = "dkaraoke-lyrics-style-field";
+      styleField.append(styleLabel, styleSelector);
+
+      lyricsControls.append(lyricsToggle, styleField, refreshButton);
+      lyricsEditor.append(lyricsHeading, lyricsTextarea, lyricsControls);
 
       const actionRow = document.createElement("div");
       actionRow.className = "dkaraoke-action-row";
@@ -918,6 +963,7 @@
     updateStemButtons();
     updateLyricsButton();
     updateRefreshLyricsButton();
+    setLyricsStyle(lyricsStyle, false);
     checkSavedResults();
     return true;
   }
@@ -1025,8 +1071,9 @@
     queueMount();
   }
 
-  chrome.storage.local.get({ dkaraokeEnabled: false }, (result) => {
+  chrome.storage.local.get({ dkaraokeEnabled: false, dkaraokeLyricsStyle: "arcade" }, (result) => {
     enabled = result.dkaraokeEnabled;
+    lyricsStyle = result.dkaraokeLyricsStyle === "simple" ? "simple" : "arcade";
     applyState();
     queueMount();
   });
@@ -1057,6 +1104,7 @@
           lyricsText = message.lyrics.text;
           youtubeLyrics = message.lyrics;
           setLyrics(message.lyrics);
+          setLyricsStatus("Saved synchronized lyrics ready.", "success");
         }
         if (message.hasStems && message.instrumentalUrl && message.vocalsUrl) {
           prepareCustomAudio(
@@ -1086,15 +1134,15 @@
         setLyrics(message.lyrics || { text: lyricsText, segments: [], source: "manual" });
         updateRefreshLyricsButton();
         setProcessing(processing);
-        setProcessStatus(message.message || "Lyrics timing refreshed.", "success");
+        setLyricsStatus(message.message || "Lyrics timing refreshed.", "success");
       } else if (message.status === "error") {
         lyricsProcessing = false;
         lyricsProcessingJobId = null;
         updateRefreshLyricsButton();
         setProcessing(processing);
-        setProcessStatus(message.message || "Could not refresh lyric timing.", "error");
+        setLyricsStatus(message.message || "Could not refresh lyric timing.", "error");
       } else {
-        setProcessStatus(message.message || "Refreshing word timing...", "busy", message.progress);
+        setLyricsStatus(message.message || "Refreshing word timing...", "busy");
       }
       return;
     }
@@ -1105,13 +1153,13 @@
         lyricsText = youtubeLyrics.text || "";
         setLyrics(youtubeLyrics);
         updateRefreshLyricsButton();
-        setProcessStatus(
+        setLyricsStatus(
           youtubeLyrics.segments?.length ? (message.message || "Synchronized lyrics loaded.") : "No synchronized lyrics found. You can enter them manually.",
           youtubeLyrics.segments?.length ? "success" : "info"
         );
       } else if (message.status === "error") {
         lyricsFetchJobId = null;
-        setProcessStatus(message.message || "No online lyrics found. You can enter them manually.", "info");
+        setLyricsStatus(message.message || "No online lyrics found. You can enter them manually.", "info");
       }
       return;
     }
@@ -1122,7 +1170,7 @@
         lyricsText = message.lyrics.text;
         setLyrics(message.lyrics);
       }
-      setProcessStatus(
+      setLyricsStatus(
         message.message || "Lyrics available; refining word timing after separation...",
         message.lyrics?.segments?.length ? "success" : "busy"
       );
@@ -1135,11 +1183,12 @@
         return;
       }
       activeJobStemsReady = true;
+      setLyricsStatus("Refining lyrics timing...", "busy");
       prepareCustomAudio(
         { instrumental: message.instrumentalUrl, vocals: message.vocalsUrl },
         message.cacheHit
-          ? "Cached separated audio ready; refining lyrics..."
-          : "Separated audio ready; refining lyrics..."
+          ? "Cached separated audio ready."
+          : "Separated audio ready."
       );
     } else if (message.status === "complete") {
       const hasFinalLyrics = Boolean(message.lyrics?.text && message.lyrics?.segments?.length);
@@ -1149,6 +1198,10 @@
       setProcessing(false);
       if (message.lyrics) {
         setLyrics(message.lyrics);
+        setLyricsStatus(
+          hasFinalLyrics ? "Synchronized lyrics ready." : "No synchronized lyrics found. You can enter them manually.",
+          hasFinalLyrics ? "success" : "info"
+        );
       }
       if (!activeJobStemsReady && message.instrumentalUrl && message.vocalsUrl) {
         prepareCustomAudio(
@@ -1156,7 +1209,7 @@
           "Separated audio ready. Synchronizing instrumental..."
         );
       } else {
-        setProcessStatus(message.message || "Stems and synchronized lyrics ready.", "success");
+        setProcessStatus("Separated audio ready.", "success");
       }
       activeJobStemsReady = false;
     } else if (message.status === "error") {
@@ -1166,7 +1219,11 @@
       setProcessStatus(message.message || "Download failed.", "error");
     } else {
       setProcessing(true);
-      setProcessStatus(message.message || "Processing...", "busy", message.progress);
+      if (["lyrics", "lyricsLookup"].includes(message.phase)) {
+        setLyricsStatus(message.message || "Processing lyrics...", "busy");
+      } else {
+        setProcessStatus(message.message || "Processing...", "busy", message.progress);
+      }
     }
   });
 })();

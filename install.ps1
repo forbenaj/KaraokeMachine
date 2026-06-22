@@ -53,9 +53,28 @@ if (-not (Test-Path $toolsPython)) {
   Invoke-Checked "Python environment creation" { & $python -m venv $toolsVenv }
 }
 
-Write-Host "Installing/updating yt-dlp..."
-Invoke-Checked "yt-dlp installation" { & $toolsPython -m pip install --disable-pip-version-check --upgrade yt-dlp }
+Write-Host "Installing/updating yt-dlp and its YouTube JavaScript solver..."
+Invoke-Checked "yt-dlp installation" { & $toolsPython -m pip install --disable-pip-version-check --upgrade "yt-dlp[default]" }
 Invoke-Checked "yt-dlp validation" { & $toolsPython -m yt_dlp --version }
+Invoke-Checked "yt-dlp JavaScript solver validation" { & $toolsPython -c "import yt_dlp_ejs" }
+
+$node = Get-Command node -ErrorAction SilentlyContinue
+if (-not $node) {
+  $winget = Get-Command winget -ErrorAction SilentlyContinue
+  if (-not $winget) {
+    throw "Node.js is required by yt-dlp to solve YouTube media URLs, and winget is unavailable. Install Node.js, then rerun install.ps1."
+  }
+  Write-Host "Installing Node.js for yt-dlp's YouTube JavaScript solver..."
+  Invoke-Checked "Node.js installation" {
+    & $winget.Source install --id OpenJS.NodeJS.LTS -e --silent --accept-package-agreements --accept-source-agreements
+  }
+  Refresh-ProcessPath
+  $node = Get-Command node -ErrorAction SilentlyContinue
+}
+if (-not $node) {
+  throw "Node.js was not found after installation. Restart PowerShell and rerun install.ps1."
+}
+Invoke-Checked "Node.js validation" { & $node.Source --version *> $null }
 
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
 $ffprobe = Get-Command ffprobe -ErrorAction SilentlyContinue
@@ -80,7 +99,8 @@ Invoke-Checked "ffprobe validation" { & $ffprobe.Source -version *> $null }
 
 $extensionId = Get-ExtensionId $manifest.key
 $ffmpegDir = Split-Path -Parent $ffmpeg.Source
-$launcherPath = @($toolsScripts, $ffmpegDir) -join ";"
+$nodeDir = Split-Path -Parent $node.Source
+$launcherPath = @($toolsScripts, $ffmpegDir, $nodeDir) -join ";"
 
 New-Item -ItemType Directory -Path $hostDir -Force | Out-Null
 @"
@@ -108,6 +128,7 @@ Write-Host ""
 Write-Host "Registered native host: $hostName"
 Write-Host "Extension ID: $extensionId"
 Write-Host "yt-dlp: $toolsScripts\yt-dlp.exe"
+Write-Host "Node.js: $($node.Source)"
 Write-Host "FFmpeg: $($ffmpeg.Source)"
 if ($roformerMissing) {
   Write-Warning "RoFormer is not ready. Run .\setup-roformer.ps1 (a large model/runtime download)."
