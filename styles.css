@@ -149,7 +149,7 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
   background: radial-gradient(
     circle at center,
     color-mix(in srgb, var(--dk-star-color, #ff00b8) 100%, transparent) 3%,
-    color-mix(in srgb, var(--dk-star-color, #ff00b8) 20%, transparent) 8%,
+    color-mix(in srgb, var(--dk-star-color, #ff00b8) 50%, transparent) 8%,
     color-mix(in srgb, var(--dk-star-color, #ff00b8) 15%, transparent) 70%,
     color-mix(in srgb, var(--dk-star-color, #ff00b8) 0%, transparent) 80%
   );
