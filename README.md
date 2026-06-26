@@ -33,17 +33,25 @@ Whenever a song opens, DKaraoKe checks local results automatically:
 
 1. Cached Whisper lyrics and word timing are loaded first.
 2. Cached LRCLIB lyrics and provisional timing are used if Whisper results do not exist.
-3. If the MP3 and both stems already exist, playback immediately switches to the instrumental stem.
-4. **Karaokize!** is enabled only while lyrics or stems are missing.
+3. If both stems already exist, playback immediately switches to the instrumental stem.
+4. **Karaokize!** is enabled only while stems are missing.
 
-Pressing **Karaokize!** starts the missing work. If lyrics are absent, LRCLIB lookup runs alongside audio download/separation and its synchronized lyrics appear as soon as they arrive. Stems are published as soon as RoFormer finishes. Whisper then analyzes the vocal stem and automatically replaces LRCLIB's provisional timing with refined word timing.
+Pressing **Karaokize!** prepares only the audio stems. Lyrics are separate, explicit processes in the lyrics editor: search LRCLIB for text, then extract refined word timings from the prepared vocal stem.
+
+The audio and lyrics pipelines are independently scheduled. LRCLIB search can
+run while audio is downloading or separating. If **Extract timings** is pressed
+while Karaokize is still preparing the same song, the timing job waits for the
+vocal stem and starts automatically when it becomes available.
 
 ### Playback Controls
 
 The left section contains a playful visual monitor and two audio toggle buttons:
 
 - **Instrumental:** play the synchronized instrumental stem.
-- **Voice only:** play the synchronized vocal stem.
+- **Vocals:** play the synchronized vocal stem.
+- **Settings:** adjust latency compensation, lyric timing offset, and whether audio/lyrics toggles persist across songs or reset to chosen defaults.
+
+If a song is already processing, later **Karaokize!** requests are queued in the background. A floating queue button appears in the lower-left corner while work is active; open it to see the current song and waiting songs.
 
 ### Lyrics Editor
 
@@ -51,7 +59,8 @@ The right section contains the lyrics editor. Its compact control section sits b
 
 - **Lyrics:** show or hide synchronized lyrics over the video.
 - **Lyrics style:** choose the original arcade treatment or a simpler subtitle treatment.
-- **Refresh lyrics:** rebuild Whisper timing for edited or pasted lyrics using the existing vocal stem.
+- **Search LRCLIB:** find lyrics and provisional synchronized timing for the current song.
+- **Extract timings:** use Whisper on the existing vocal stem to build refined word timing for the current editor text.
 
 Lyrics search, extraction, and timing messages appear in the lyrics header; the left monitor remains dedicated to audio preparation and playback.
 
@@ -68,19 +77,21 @@ Each video is stored separately under:
 Important cached files include:
 
 ```text
-audio.mp3
 separated\mel_band_roformer\audio\instrumental.mp3
 separated\mel_band_roformer\audio\vocals.mp3
 lrclib_lyrics.json
 lyrics.json
 ```
 
-The pipeline resumes from the best available state:
+The downloaded source audio is temporary. `yt-dlp` keeps the best available
+audio in its original container, RoFormer consumes it, and the source is deleted
+as soon as the stems are ready. The pipeline resumes from the best available
+state:
 
-- MP3 and both stems present: serve them without downloading or separating again.
-- Only the MP3 present: rerun separation without redownloading.
-- No MP3 present: download best audio with `yt-dlp`, convert it to MP3, then separate it.
-- LRCLIB timing present: display it immediately while waiting for Whisper.
+- Both stems present: serve them without downloading or separating again.
+- Legacy `audio.mp3` present but stems missing: use it once for separation, then delete it.
+- Stems missing: download best audio with `yt-dlp` without an intermediate MP3 conversion, separate it, then delete the temporary source.
+- LRCLIB timing present: display it immediately.
 - Whisper timing present: use it as the timing authority.
 
 The default Whisper model is `small` and downloads on its first timing run. Set `DKARAOKE_WHISPER_MODEL` before starting Chrome to select another model.
@@ -113,25 +124,29 @@ Common recovery steps:
 - **RoFormer is not installed:** rerun `.\setup-roformer.ps1`; checkpoint downloads resume automatically.
 - **FFmpeg not found:** ensure both `ffmpeg` and `ffprobe` are on `PATH`, then rerun `.\install.ps1`.
 - **A prepared song behaves incorrectly:** remove only that video's cache directory and press **Karaokize!** again.
-- **Edited lyrics cannot be refreshed:** prepare the stems first; refresh timing requires an existing vocal stem.
+- **Timings cannot be extracted:** prepare the stems first; timing extraction requires an existing vocal stem.
 
 ## Architecture
 
 ```text
 YouTube
-  content.js
+  src/content/
     -> Chrome runtime messages
   background.js
     -> native messaging: com.dkaraoke.downloader
   host/dkaraoke_host.py
-    -> yt-dlp -> FFmpeg -> Mel-Band RoFormer -> Whisper
+    -> yt-dlp -> temporary source -> Mel-Band RoFormer -> Whisper
     -> LRCLIB lookup and per-video cache
+    -> concurrent job dispatch; timing jobs may wait on same-video stems
     -> tokenized 127.0.0.1 stem server
-  content.js
+  src/content/
     -> hidden HTMLAudioElement synchronized to YouTube <video>
 ```
 
-RoFormer produces temporary stereo 44.1 kHz float WAV files. The host converts both stems to 192 kbps stereo MP3, verifies them, and then removes the WAV files. Existing cached WAV stems are migrated automatically when next used.
+RoFormer normalizes the temporary source to stereo 44.1 kHz float WAV, then
+produces temporary WAV stems. The host converts both stems to 192 kbps stereo
+MP3, verifies them, and removes both the WAV stems and downloaded source.
+Existing cached WAV stems are migrated automatically when next used.
 
 ## Uninstall
 

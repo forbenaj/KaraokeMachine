@@ -138,6 +138,7 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
 }
 
 .dkaraoke-monitor-star {
+  --dk-star-color: #ff00b8;
   position: fixed;
   z-index: -1;
   top: 0;
@@ -156,10 +157,36 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
   opacity: 1;
   transform: translate(-50%, -50%) rotate(0turn);
   transform-origin: center;
-  -webkit-mask: var(--dk-star-image) center / contain no-repeat;
-  mask: var(--dk-star-image) center / contain no-repeat;
-  animation: dkaraoke-monitor-spin 28s linear infinite;
+  -webkit-mask: var(--dk-lines-image) center / contain no-repeat;
+  mask: var(--dk-lines-image) center / contain no-repeat;
+  animation: none;
   will-change: transform;
+}
+
+.dkaraoke-monitor-frame.is-monitor-ready .dkaraoke-monitor-star,
+.dkaraoke-monitor-frame.is-monitor-playing .dkaraoke-monitor-star,
+.dkaraoke-monitor-frame.is-monitor-paused .dkaraoke-monitor-star {
+  -webkit-mask-image: var(--dk-star-image);
+  mask-image: var(--dk-star-image);
+}
+
+.dkaraoke-monitor-frame.is-monitor-playing .dkaraoke-monitor-star {
+  --dk-star-color: #ff00b8;
+  opacity: 1;
+  animation: dkaraoke-monitor-spin 28s linear infinite;
+  animation-play-state: running;
+}
+
+.dkaraoke-monitor-frame.is-monitor-paused .dkaraoke-monitor-star {
+  --dk-star-color: #8f8f8f;
+  opacity: 0.74;
+  animation: dkaraoke-monitor-spin 28s linear infinite;
+  animation-play-state: paused;
+}
+
+.dkaraoke-monitor-frame.is-monitor-busy .dkaraoke-monitor-star {
+  --dk-star-color: #00ffff;
+  opacity: 0.9;
 }
 
 #dkaraoke-monitor {
@@ -191,6 +218,16 @@ html.dkaraoke-enabled ytd-watch-flexy #secondary-inner {
 #dkaraoke-monitor.is-playing .dkaraoke-monitor-message {
   color: #00ffff;
   filter: drop-shadow(0 0 18px #ffff00);
+}
+
+#dkaraoke-monitor.is-paused .dkaraoke-monitor-message {
+  color: #d6d6d6;
+  filter: none;
+}
+
+#dkaraoke-monitor.is-ready .dkaraoke-monitor-message {
+  color: #ffffff;
+  filter: drop-shadow(0 0 12px #ff00b8);
 }
 
 #dkaraoke-monitor[data-count="2"],
@@ -366,9 +403,16 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
   gap: 10px;
 }
 
+.dkaraoke-lyrics-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
 #dkaraoke-lyrics-style,
 #dkaraoke-lyrics,
-#dkaraoke-refresh-lyrics {
+#dkaraoke-search-lrclib,
+#dkaraoke-extract-timings {
   min-height: 28px;
   padding: 0 10px;
   border: 1px solid rgba(89, 75, 140, 0.16);
@@ -406,7 +450,8 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
 }
 
 #dkaraoke-lyrics:disabled,
-#dkaraoke-refresh-lyrics:disabled {
+#dkaraoke-search-lrclib:disabled,
+#dkaraoke-extract-timings:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
@@ -655,7 +700,8 @@ html[dark] #dkaraoke-lyrics-text {
   background: rgba(43, 39, 73, 0.54);
 }
 
-html[dark] #dkaraoke-refresh-lyrics {
+html[dark] #dkaraoke-search-lrclib,
+html[dark] #dkaraoke-extract-timings {
   border-color: rgba(221, 215, 255, 0.1);
   background: rgba(43, 39, 73, 0.54);
 }
@@ -973,7 +1019,8 @@ html[dark] .dkaraoke-action-row {
 }
 
 #dkaraoke-karaokize:not(:disabled):active,
-#dkaraoke-refresh-lyrics:not(:disabled):active {
+#dkaraoke-search-lrclib:not(:disabled):active,
+#dkaraoke-extract-timings:not(:disabled):active {
   transform: translate(3px, 3px);
   box-shadow: none;
 }
@@ -1021,8 +1068,10 @@ html[dark] .dkaraoke-action-row {
 
 #dkaraoke-lyrics-style,
 #dkaraoke-lyrics,
-#dkaraoke-refresh-lyrics,
-html[dark] #dkaraoke-refresh-lyrics {
+#dkaraoke-search-lrclib,
+#dkaraoke-extract-timings,
+html[dark] #dkaraoke-search-lrclib,
+html[dark] #dkaraoke-extract-timings {
   min-height: 32px;
   border: 3px solid var(--dk-ink);
   border-radius: 0;
@@ -1298,4 +1347,213 @@ html.dkaraoke-enabled .html5-video-player .ytp-title-link {
 
 html.dkaraoke-enabled .html5-video-player .ytp-spinner-circle {
   border-color: var(--dk-magenta) var(--dk-cyan) var(--dk-yellow) var(--dk-paper) !important;
+}
+
+#dkaraoke-settings {
+  min-height: 38px;
+  border: 3px solid var(--dk-ink, #1a1a1a);
+  border-radius: 0;
+  color: var(--dk-ink, #1a1a1a);
+  background: var(--dk-cyan, #dff5ff);
+  box-shadow: var(--dk-small-shadow, 3px 3px 0 rgba(0, 0, 0, 0.9));
+  font: 800 12px/1 var(--dk-ui-font, system-ui, sans-serif);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#dkaraoke-settings-modal {
+  width: min(420px, calc(100vw - 28px));
+  padding: 0;
+  border: 4px solid var(--dk-ink, #1a1a1a);
+  border-radius: 0;
+  color: var(--dk-ink, #1a1a1a);
+  background: var(--dk-paper, #ffffff);
+  box-shadow: var(--dk-panel-shadow, 8px 8px 0 rgba(0, 0, 0, 0.9));
+  font: 700 13px/1.3 var(--dk-ui-font, system-ui, sans-serif);
+}
+
+#dkaraoke-settings-modal::backdrop {
+  background: rgba(0, 0, 0, 0.48);
+}
+
+.dkaraoke-modal-header,
+.dkaraoke-queue-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 4px solid var(--dk-ink, #1a1a1a);
+  background: var(--dk-cyan, #dff5ff);
+}
+
+.dkaraoke-modal-header strong,
+.dkaraoke-queue-header strong {
+  font: 900 22px/1 var(--dk-display-font, Impact, sans-serif);
+  text-transform: uppercase;
+}
+
+.dkaraoke-modal-header button,
+.dkaraoke-queue-header button {
+  min-height: 30px;
+  border: 3px solid var(--dk-ink, #1a1a1a);
+  border-radius: 0;
+  color: var(--dk-ink, #1a1a1a);
+  background: var(--dk-paper, #ffffff);
+  box-shadow: var(--dk-small-shadow, 3px 3px 0 rgba(0, 0, 0, 0.9));
+  font: 800 10px/1 var(--dk-ui-font, system-ui, sans-serif);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.dkaraoke-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
+}
+
+.dkaraoke-setting-field {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  align-items: center;
+  gap: 12px;
+}
+
+.dkaraoke-setting-field input {
+  min-height: 32px;
+  min-width: 0;
+  border: 3px solid var(--dk-ink, #1a1a1a);
+  border-radius: 0;
+  color: var(--dk-ink, #1a1a1a);
+  background: #fffde1;
+  font: 800 12px/1 var(--dk-ui-font, system-ui, sans-serif);
+}
+
+.dkaraoke-settings-defaults {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+  border: 3px solid var(--dk-ink, #1a1a1a);
+}
+
+.dkaraoke-settings-defaults legend {
+  padding: 0 6px;
+  font: 900 12px/1 var(--dk-ui-font, system-ui, sans-serif);
+  text-transform: uppercase;
+}
+
+.dkaraoke-settings-defaults label,
+.dkaraoke-reset-options label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dkaraoke-reset-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-left: 22px;
+}
+
+#dkaraoke-queue-button {
+  position: fixed;
+  z-index: 9999;
+  left: 18px;
+  bottom: 18px;
+  display: flex;
+  max-width: min(360px, calc(100vw - 36px));
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 4px solid var(--dk-ink, #1a1a1a);
+  border-radius: 0;
+  color: var(--dk-ink, #1a1a1a);
+  background: var(--dk-yellow, #fff55a);
+  box-shadow: var(--dk-panel-shadow, 6px 6px 0 rgba(0, 0, 0, 0.9));
+  font: 900 12px/1.15 var(--dk-ui-font, system-ui, sans-serif);
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#dkaraoke-queue-button[hidden],
+#dkaraoke-queue-panel[hidden] {
+  display: none;
+}
+
+.dkaraoke-queue-button-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dkaraoke-queue-count {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border: 3px solid var(--dk-ink, #1a1a1a);
+  background: var(--dk-magenta, #ff66bd);
+  color: #ffffff;
+}
+
+#dkaraoke-queue-panel {
+  position: fixed;
+  z-index: 10000;
+  left: 18px;
+  bottom: 78px;
+  width: min(420px, calc(100vw - 36px));
+  max-height: min(420px, calc(100vh - 120px));
+  overflow: auto;
+  border: 4px solid var(--dk-ink, #1a1a1a);
+  color: var(--dk-ink, #1a1a1a);
+  background: var(--dk-paper, #ffffff);
+  box-shadow: var(--dk-panel-shadow, 6px 6px 0 rgba(0, 0, 0, 0.9));
+  font: 700 12px/1.3 var(--dk-ui-font, system-ui, sans-serif);
+}
+
+.dkaraoke-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dkaraoke-queue-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 12px;
+  border-bottom: 3px solid var(--dk-ink, #1a1a1a);
+}
+
+.dkaraoke-queue-list li:last-child {
+  border-bottom: 0;
+}
+
+.dkaraoke-queue-list li[data-status="running"] {
+  background: color-mix(in srgb, var(--dk-cyan, #00ffff) 32%, var(--dk-paper, #ffffff));
+}
+
+.dkaraoke-queue-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 900;
+}
+
+.dkaraoke-queue-meta {
+  color: #4b4b4b;
+  font-size: 11px;
 }

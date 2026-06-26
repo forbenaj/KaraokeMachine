@@ -2,6 +2,7 @@ import json
 import hashlib
 import logging
 import os
+import queue
 import re
 import secrets
 import shutil
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from difflib import SequenceMatcher
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -22,6 +24,14 @@ from urllib.request import Request, urlopen
 YOUTUBE_HOSTS = {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 ALLOWED_ORIGINS = {"https://www.youtube.com", "https://m.youtube.com", "https://music.youtube.com"}
 PROGRESS_RE = re.compile(r"\[download\]\s+([\d.]+)%")
+ROFORMER_TOTAL_TIME_RE = re.compile(
+    r"Estimated total processing time for this track:\s*([\d.]+)\s*seconds",
+    re.IGNORECASE,
+)
+ROFORMER_REMAINING_TIME_RE = re.compile(
+    r"Estimated time remaining:\s*([\d.]+)\s*seconds",
+    re.IGNORECASE,
+)
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)$")
 AUTH_ERROR_MARKERS = (
     "sign in to confirm",
@@ -36,12 +46,28 @@ AUDIO_FILES = {}
 AUDIO_FILES_LOCK = threading.Lock()
 SEND_MESSAGE_LOCK = threading.Lock()
 STEM_TRANSCODE_LOCK = threading.Lock()
+STEM_JOB_LOCK = threading.Lock()
+ACTIVE_STEM_JOBS = set()
+STEM_READY_EVENTS = {}
+TIMING_JOB_LOCK = threading.Lock()
+TIMING_JOB_LOCKS = {}
 AUDIO_SERVER = None
 AUDIO_SERVER_THREAD = None
 STEM_MP3_BITRATE = "192k"
 LYRICS_TIMING_VERSION = 3
 LRCLIB_SEARCH_URL = "https://lrclib.net/api/search"
 LRC_TIMESTAMP_RE = re.compile(r"\[(\d+):(\d{2}(?:\.\d{1,3})?)\]")
+YTDLP_METADATA_TIMEOUT_SECONDS = 90
+YTDLP_METADATA_ATTEMPTS = 2
+MAX_NATIVE_MESSAGE_BYTES = 1024 * 1024
+FFPROBE_TIMEOUT_SECONDS = 60
+FFMPEG_TIMEOUT_SECONDS = 30 * 60
+YTDLP_DOWNLOAD_TIMEOUT_SECONDS = 2 * 60 * 60
+ROFORMER_TIMEOUT_SECONDS = 6 * 60 * 60
+LYRICS_TIMEOUT_SECONDS = 2 * 60 * 60
+STEM_WAIT_TIMEOUT_SECONDS = (
+    YTDLP_DOWNLOAD_TIMEOUT_SECONDS + ROFORMER_TIMEOUT_SECONDS + 10 * 60
+)
 
 
 def configure_logging():
@@ -66,16 +92,51 @@ def configure_logging():
 LOGGER, LOG_PATH = configure_logging()
 
 
+class NativeMessagingDisconnected(Exception):
+    pass
+
+
 def send_message(payload):
     encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    with SEND_MESSAGE_LOCK:
-        sys.stdout.buffer.write(struct.pack("<I", len(encoded)))
-        sys.stdout.buffer.write(encoded)
-        sys.stdout.buffer.flush()
+    try:
+        with SEND_MESSAGE_LOCK:
+            sys.stdout.buffer.write(struct.pack("<I", len(encoded)))
+            sys.stdout.buffer.write(encoded)
+            sys.stdout.buffer.flush()
+    except (BrokenPipeError, OSError) as exc:
+        raise NativeMessagingDisconnected("Native messaging output closed.") from exc
 
 
 def send_job(job_id, message_type, message, **extra):
     send_message({"jobId": job_id, "type": message_type, "message": message, **extra})
+
+
+def format_remaining_time(seconds):
+    seconds = max(0, int(round(seconds)))
+    minutes, seconds = divmod(seconds, 60)
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def roformer_progress_from_line(line, total_seconds=None):
+    total_match = ROFORMER_TOTAL_TIME_RE.search(line)
+    if total_match:
+        return float(total_match.group(1)), None
+
+    remaining_match = ROFORMER_REMAINING_TIME_RE.search(line)
+    if not remaining_match:
+        return total_seconds, None
+
+    remaining_seconds = max(0.0, float(remaining_match.group(1)))
+    if not total_seconds or total_seconds <= 0:
+        total_seconds = remaining_seconds
+    if total_seconds <= 0:
+        percent = 99.0
+    else:
+        percent = 100.0 * (1.0 - min(remaining_seconds, total_seconds) / total_seconds)
+        percent = max(0.0, min(99.0, percent))
+    return total_seconds, (remaining_seconds, percent)
 
 
 def read_message():
@@ -83,10 +144,80 @@ def read_message():
     if not raw_length:
         return None
     length = struct.unpack("<I", raw_length)[0]
+    if length > MAX_NATIVE_MESSAGE_BYTES:
+        raise ValueError("Native message exceeds the 1 MiB size limit.")
     payload = sys.stdin.buffer.read(length)
     if len(payload) != length:
         raise ValueError("Received a truncated native message.")
     return json.loads(payload.decode("utf-8"))
+
+
+def subprocess_creationflags():
+    if os.name != "nt":
+        return 0
+    return subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+
+
+def terminate_process_tree(process, label):
+    if process.poll() is not None:
+        return
+    LOGGER.warning("terminating timed-out process label=%s pid=%s", label, process.pid)
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                timeout=15,
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            return
+        except (OSError, subprocess.SubprocessError):
+            LOGGER.exception("could not terminate process tree label=%s pid=%s", label, process.pid)
+    try:
+        process.kill()
+    except OSError:
+        pass
+
+
+def stream_process_lines(process, label, timeout_seconds):
+    """Yield merged process output without allowing a silent child to hang forever."""
+    if process.stdout is None:
+        raise RuntimeError(f"{label} did not expose its output stream.")
+
+    # Lightweight test doubles commonly expose an iterator rather than a pipe.
+    if not hasattr(process.stdout, "readline"):
+        yield from process.stdout
+        return
+
+    lines = queue.Queue()
+    finished = object()
+
+    def read_output():
+        try:
+            for line in process.stdout:
+                lines.put(line)
+        finally:
+            lines.put(finished)
+
+    threading.Thread(
+        target=read_output,
+        name=f"{label.lower().replace(' ', '-')}-output",
+        daemon=True,
+    ).start()
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            terminate_process_tree(process, label)
+            raise TimeoutError(f"{label} timed out after {timeout_seconds // 60} minutes.")
+        try:
+            item = lines.get(timeout=min(1.0, remaining))
+        except queue.Empty:
+            continue
+        if item is finished:
+            return
+        yield item
 
 
 class AudioRequestHandler(BaseHTTPRequestHandler):
@@ -208,12 +339,20 @@ def is_complete_file(path):
     return path.is_file() and path.stat().st_size > 0
 
 
+def unlink_best_effort(path, context="cleanup"):
+    try:
+        path.unlink(missing_ok=True)
+        return True
+    except OSError as exc:
+        LOGGER.warning("%s skipped locked file path=%s error=%s", context, path, exc)
+        return False
+
+
 def stem_paths(stem_dir, suffix=".mp3"):
     return stem_dir / f"instrumental{suffix}", stem_dir / f"vocals{suffix}"
 
 
 def validate_stem_mp3(path):
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
     result = subprocess.run(
         [
             "ffprobe", "-v", "error", "-select_streams", "a:0",
@@ -221,7 +360,9 @@ def validate_stem_mp3(path):
             "-of", "json", str(path),
         ],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
-        creationflags=creationflags,
+        stdin=subprocess.DEVNULL,
+        timeout=FFPROBE_TIMEOUT_SECONDS,
+        creationflags=subprocess_creationflags(),
     )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or f"ffprobe could not validate {path.name}.")
@@ -247,12 +388,11 @@ def compress_stems(job_id, instrumental_wav, vocals_wav):
     temporary_paths = tuple(
         path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp.mp3") for path in mp3_paths
     )
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
 
     with STEM_TRANSCODE_LOCK:
         if all(is_complete_file(path) for path in mp3_paths):
             for path in wav_paths:
-                path.unlink(missing_ok=True)
+                unlink_best_effort(path, "cached WAV cleanup")
             return mp3_paths
         if not all(is_complete_file(path) for path in wav_paths):
             raise FileNotFoundError("Both WAV stems are required before MP3 compression.")
@@ -260,6 +400,7 @@ def compress_stems(job_id, instrumental_wav, vocals_wav):
         send_job(job_id, "status", "Compressing separated stems to MP3...", phase="convert")
         try:
             for source, temporary in zip(wav_paths, temporary_paths):
+                LOGGER.info("job=%s compressing cached stem source=%s", job_id, source)
                 result = subprocess.run(
                     [
                         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -269,7 +410,9 @@ def compress_stems(job_id, instrumental_wav, vocals_wav):
                         str(temporary),
                     ],
                     capture_output=True, text=True, encoding="utf-8", errors="replace",
-                    creationflags=creationflags,
+                    stdin=subprocess.DEVNULL,
+                    timeout=FFMPEG_TIMEOUT_SECONDS,
+                    creationflags=subprocess_creationflags(),
                 )
                 if result.returncode != 0:
                     raise RuntimeError(result.stderr.strip() or f"FFmpeg could not compress {source.name}.")
@@ -278,10 +421,10 @@ def compress_stems(job_id, instrumental_wav, vocals_wav):
             for temporary, destination in zip(temporary_paths, mp3_paths):
                 os.replace(temporary, destination)
             for path in wav_paths:
-                path.unlink(missing_ok=True)
+                unlink_best_effort(path, "post-transcode WAV cleanup")
         finally:
             for path in temporary_paths:
-                path.unlink(missing_ok=True)
+                unlink_best_effort(path, "temporary MP3 cleanup")
 
     LOGGER.info("job=%s compressed stems bitrate=%s directory=%s", job_id, STEM_MP3_BITRATE, instrumental_wav.parent)
     return mp3_paths
@@ -291,15 +434,24 @@ def resolve_cached_stems(job_id, stem_dir):
     mp3_paths = stem_paths(stem_dir)
     wav_paths = stem_paths(stem_dir, ".wav")
     if all(is_complete_file(path) for path in mp3_paths):
-        for path in wav_paths:
-            path.unlink(missing_ok=True)
-        return mp3_paths
-    if all(is_complete_file(path) for path in wav_paths):
         try:
-            return compress_stems(job_id, *wav_paths)
-        except Exception:
-            LOGGER.exception("job=%s could not migrate cached WAV stems", job_id)
-            return wav_paths
+            for path in mp3_paths:
+                validate_stem_mp3(path)
+        except RuntimeError:
+            LOGGER.exception("job=%s cached MP3 stems are invalid; rebuilding", job_id)
+            for path in mp3_paths:
+                unlink_best_effort(path, "invalid cached MP3 cleanup")
+            if any(is_complete_file(path) for path in mp3_paths):
+                raise RuntimeError(
+                    "Cached stems are invalid but locked by another process. "
+                    "Close media players using them, then retry."
+                )
+        else:
+            for path in wav_paths:
+                unlink_best_effort(path, "cached WAV cleanup")
+            return mp3_paths
+    if all(is_complete_file(path) for path in wav_paths):
+        return compress_stems(job_id, *wav_paths)
     return mp3_paths
 
 
@@ -315,11 +467,14 @@ def read_json_cache(path):
 
 def write_json_cache(path, payload):
     temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-    os.replace(temporary, path)
+    try:
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        unlink_best_effort(temporary, "JSON cache temporary cleanup")
 
 
-def send_stems_ready(job_id, video_id, final_path, instrumental_path, vocals_path, cache_hit=False):
+def send_stems_ready(job_id, video_id, instrumental_path, vocals_path, cache_hit=False):
     instrumental_url = register_audio(instrumental_path)
     vocals_url = register_audio(vocals_path)
     send_job(
@@ -327,7 +482,6 @@ def send_stems_ready(job_id, video_id, final_path, instrumental_path, vocals_pat
         "stemsReady",
         "Cached stems ready. Loading synchronized audio..."
         if cache_hit else "Stems ready. Loading synchronized audio...",
-        filePath=str(final_path),
         instrumentalPath=str(instrumental_path),
         vocalsPath=str(vocals_path),
         instrumentalUrl=instrumental_url,
@@ -338,21 +492,17 @@ def send_stems_ready(job_id, video_id, final_path, instrumental_path, vocals_pat
 
 
 def complete_job(job_id, video_id, lyrics=None):
-    send_job(
-        job_id,
-        "complete",
-        "Stems ready and lyric timing refined."
-        if (lyrics or {}).get("segments") else "Stems ready. No synchronized lyrics found.",
-        lyrics=lyrics or {"text": "", "segments": [], "source": "none"},
-        videoId=video_id,
-    )
+    payload = {"videoId": video_id}
+    if lyrics is not None:
+        payload["lyrics"] = lyrics
+    send_job(job_id, "complete", "Stems ready.", **payload)
 
 
 def check_cache(job_id, raw_url):
     url = validate_youtube_url(raw_url)
     video_id = video_id_from_url(url)
     output_dir = app_download_dir(video_id)
-    final_path = output_dir / "audio.mp3"
+    legacy_audio_path = output_dir / "audio.mp3"
     stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
     instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
 
@@ -371,7 +521,9 @@ def check_cache(job_id, raw_url):
     else:
         lyrics = {key: lyrics.get(key) for key in ("text", "segments", "source")}
 
-    has_stems = all(is_complete_file(path) for path in (final_path, instrumental_path, vocals_path))
+    has_stems = all(is_complete_file(path) for path in (instrumental_path, vocals_path))
+    if has_stems:
+        unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
     payload = {
         "lyrics": lyrics,
         "videoId": video_id,
@@ -380,7 +532,6 @@ def check_cache(job_id, raw_url):
     }
     if has_stems:
         payload.update({
-            "filePath": str(final_path),
             "instrumentalUrl": register_audio(instrumental_path),
             "vocalsUrl": register_audio(vocals_path),
         })
@@ -416,38 +567,71 @@ def run_roformer(job_id, source_path, output_dir):
         str(source_path),
     ]
     LOGGER.info("job=%s starting RoFormer source=%s", job_id, source_path)
-    creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        creationflags=creationflags,
-    )
-    assert process.stdout is not None
-    last_line = ""
-    for raw_line in process.stdout:
-        line = raw_line.strip()
-        if not line:
-            continue
-        LOGGER.info("job=%s RoFormer: %s", job_id, line)
-        last_line = line
-        if "Normalizing" in line:
-            send_job(job_id, "status", "Preparing audio for RoFormer...", phase="separate")
-        elif "Separating vocals" in line:
-            send_job(job_id, "status", "RoFormer is separating vocals...", phase="separate")
-    return_code = process.wait()
-    LOGGER.info("job=%s RoFormer exited code=%s", job_id, return_code)
-    if return_code != 0:
-        raise RuntimeError(last_line or f"RoFormer exited with code {return_code}.")
-
     stem_dir = output_dir / source_path.stem
     instrumental_path, vocals_path = stem_paths(stem_dir, ".wav")
-    if not instrumental_path.is_file() or not vocals_path.is_file():
-        raise FileNotFoundError("RoFormer finished, but its stem files were not found.")
-    return compress_stems(job_id, instrumental_path, vocals_path)
+    for path in (instrumental_path, vocals_path):
+        unlink_best_effort(path, "stale RoFormer output cleanup")
+    process = None
+    roformer_completed = False
+    try:
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            creationflags=subprocess_creationflags(),
+        )
+        last_line = ""
+        roformer_total_seconds = None
+        roformer_progress = 0.0
+        for raw_line in stream_process_lines(process, "RoFormer", ROFORMER_TIMEOUT_SECONDS):
+            line = raw_line.strip()
+            if not line:
+                continue
+            LOGGER.info("job=%s RoFormer: %s", job_id, line)
+            last_line = line
+            roformer_total_seconds, progress_update = roformer_progress_from_line(
+                line, roformer_total_seconds,
+            )
+            if "Normalizing" in line:
+                send_job(job_id, "status", "Preparing audio for RoFormer...", phase="separate")
+            elif "Separating vocals" in line:
+                send_job(
+                    job_id, "status", "RoFormer is separating vocals...",
+                    progress=0, phase="separate",
+                )
+            elif progress_update:
+                remaining_seconds, percent = progress_update
+                roformer_progress = max(roformer_progress, percent)
+                send_job(
+                    job_id,
+                    "progress",
+                    (
+                        f"RoFormer is separating vocals... "
+                        f"{roformer_progress:.0f}% · about "
+                        f"{format_remaining_time(remaining_seconds)} remaining"
+                    ),
+                    progress=roformer_progress,
+                    phase="separate",
+                )
+        return_code = process.wait(timeout=30)
+        LOGGER.info("job=%s RoFormer exited code=%s", job_id, return_code)
+        if return_code != 0:
+            raise RuntimeError(last_line or f"RoFormer exited with code {return_code}.")
+        if not all(is_complete_file(path) for path in (instrumental_path, vocals_path)):
+            raise FileNotFoundError("RoFormer finished, but both complete stem files were not found.")
+        roformer_completed = True
+        return compress_stems(job_id, instrumental_path, vocals_path)
+    except Exception:
+        if process is not None:
+            terminate_process_tree(process, "RoFormer")
+        if not roformer_completed:
+            for path in (instrumental_path, vocals_path):
+                unlink_best_effort(path, "failed RoFormer output cleanup")
+        raise
 
 
 def stop_audio_server():
@@ -488,6 +672,35 @@ def app_download_dir(video_id):
     path = root / "DKaraoKe" / "downloads" / video_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def stem_ready_event(video_id):
+    with STEM_JOB_LOCK:
+        return STEM_READY_EVENTS.setdefault(video_id, threading.Event())
+
+
+def begin_stem_job(video_id):
+    event = stem_ready_event(video_id)
+    with STEM_JOB_LOCK:
+        event.clear()
+        ACTIVE_STEM_JOBS.add(video_id)
+
+
+def finish_stem_job(video_id):
+    with STEM_JOB_LOCK:
+        ACTIVE_STEM_JOBS.discard(video_id)
+        event = STEM_READY_EVENTS.setdefault(video_id, threading.Event())
+        event.set()
+
+
+def stem_job_active(video_id):
+    with STEM_JOB_LOCK:
+        return video_id in ACTIVE_STEM_JOBS
+
+
+def timing_job_lock(video_id):
+    with TIMING_JOB_LOCK:
+        return TIMING_JOB_LOCKS.setdefault(video_id, threading.Lock())
 
 
 def cookie_line(cookie):
@@ -618,24 +831,45 @@ def run_ytdlp_json(url, cookie_path=None):
     yt_dlp = require_tools()
     command = [
         yt_dlp, "--ignore-config", *ytdlp_runtime_args(),
+        "--socket-timeout", "20",
         "--no-playlist", "--skip-download", "--no-warnings", "--dump-single-json",
     ]
     if cookie_path:
         command.extend(["--cookies", str(cookie_path)])
     command.append(url)
     LOGGER.info("inspecting YouTube metadata cookies=%s", bool(cookie_path))
-    try:
-        result = subprocess.run(
-            command, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError("YouTube metadata inspection timed out.") from exc
+    for attempt in range(1, YTDLP_METADATA_ATTEMPTS + 1):
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=YTDLP_METADATA_TIMEOUT_SECONDS,
+                creationflags=subprocess_creationflags(),
+            )
+            break
+        except subprocess.TimeoutExpired as exc:
+            LOGGER.warning(
+                "YouTube metadata inspection timed out attempt=%s/%s",
+                attempt,
+                YTDLP_METADATA_ATTEMPTS,
+            )
+            if attempt == YTDLP_METADATA_ATTEMPTS:
+                raise RuntimeError(
+                    f"YouTube metadata inspection timed out after {YTDLP_METADATA_ATTEMPTS} attempts."
+                ) from exc
     LOGGER.info("YouTube metadata inspection exited code=%s", result.returncode)
     if result.returncode != 0:
         if result.stderr.strip():
             LOGGER.error("yt-dlp metadata: %s", result.stderr.strip())
         raise RuntimeError(result.stderr.strip() or "Could not inspect the YouTube video.")
-    return json.loads(result.stdout)
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("yt-dlp returned invalid video metadata.") from exc
 
 
 def load_youtube_info(url, cookies):
@@ -652,7 +886,7 @@ def load_youtube_info(url, cookies):
             return run_ytdlp_json(url, cookie_path)
     finally:
         if cookie_path and cookie_path.exists():
-            cookie_path.unlink()
+            unlink_best_effort(cookie_path, "metadata cookie cleanup")
 
 
 def fetch_youtube_lyrics(url, cookies, output_dir, info=None):
@@ -834,20 +1068,6 @@ def fetch_lrclib_lyrics(info, output_dir):
     return result
 
 
-def fetch_best_available_lyrics(url, cookies, output_dir, requested_text="", supplied_lyrics=None):
-    requested_text = (requested_text or "").strip()
-    if requested_text:
-        return {"text": requested_text, "segments": [], "source": "manual", "message": "Using edited lyrics."}
-    if (supplied_lyrics or {}).get("text"):
-        return supplied_lyrics
-
-    info = load_youtube_info(url, cookies)
-    youtube_lyrics = fetch_youtube_lyrics(url, cookies, output_dir, info=info)
-    if youtube_lyrics.get("text"):
-        return youtube_lyrics
-    return fetch_lrclib_lyrics(info, output_dir)
-
-
 def interpolate_word_timing(index, mapped, reference_words):
     before_item = next(((position, mapped[position]) for position in range(index - 1, -1, -1) if position in mapped), None)
     after_item = next(((position, mapped[position]) for position in range(index + 1, max(mapped.keys(), default=-1) + 1) if position in mapped), None)
@@ -922,21 +1142,37 @@ def lyrics_runner_path():
 def transcribe_lyrics(job_id, vocals_path):
     python, runner = lyrics_runner_path()
     if not python.exists() or not runner.exists():
-        LOGGER.warning("job=%s lyrics runtime is unavailable", job_id)
-        return []
+        raise FileNotFoundError(
+            "Lyrics runtime is not installed. Run setup-roformer.ps1."
+        )
+    if not is_complete_file(vocals_path):
+        raise FileNotFoundError("The vocals stem is missing or empty.")
     send_job(job_id, "status", "Finding word timings in the vocals...", phase="lyrics")
     LOGGER.info("job=%s starting lyric transcription", job_id)
-    result = subprocess.run(
-        [str(python), str(runner), str(vocals_path)], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-    )
+    try:
+        result = subprocess.run(
+            [str(python), str(runner), str(vocals_path)], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=LYRICS_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+            creationflags=subprocess_creationflags(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError(
+            f"Lyrics extraction timed out after {LYRICS_TIMEOUT_SECONDS // 60} minutes."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"Could not start lyrics extraction: {exc}") from exc
     LOGGER.info("job=%s lyric transcription exited code=%s", job_id, result.returncode)
     if result.stderr.strip():
         LOGGER.info("job=%s lyric transcription output: %s", job_id, result.stderr.strip())
     if result.returncode != 0:
-        return []
+        detail = next(
+            (line.strip() for line in reversed(result.stderr.splitlines()) if line.strip()),
+            "",
+        )
+        raise RuntimeError(detail or f"Lyrics extraction exited with code {result.returncode}.")
     try:
-        return json.loads(result.stdout).get("segments", [])
+        payload = json.loads(result.stdout)
     except json.JSONDecodeError:
         # Older/cached runners or third-party code may still prefix stdout.
         # Accept the final JSON line, but retain the full diagnostic excerpt.
@@ -947,13 +1183,20 @@ def transcribe_lyrics(job_id, vocals_path):
                 continue
             if isinstance(payload, dict):
                 LOGGER.warning("job=%s lyric transcription prefixed its JSON output", job_id)
-                return payload.get("segments", [])
-        LOGGER.exception(
-            "job=%s lyric transcription returned invalid JSON stdout=%r",
-            job_id,
-            result.stdout[:1000],
-        )
-        return []
+                break
+        else:
+            LOGGER.error(
+                "job=%s lyric transcription returned invalid JSON stdout=%r",
+                job_id,
+                result.stdout[:1000],
+            )
+            raise RuntimeError("Lyrics extraction returned an invalid result.")
+    segments = payload.get("segments") if isinstance(payload, dict) else None
+    if not isinstance(segments, list):
+        raise RuntimeError("Lyrics extraction returned an invalid segment list.")
+    if not segments:
+        raise RuntimeError("Whisper found no words in the vocals stem.")
+    return segments
 
 
 def prepare_lyrics(job_id, output_dir, vocals_path, requested_text, youtube_lyrics, force=False):
@@ -979,12 +1222,8 @@ def prepare_lyrics(job_id, output_dir, vocals_path, requested_text, youtube_lyri
     # word-timestamped vocal transcription as the timing authority, then maps
     # corrected/reference lyric text onto those timestamps. Do the same here.
     whisper_segments = transcribe_lyrics(job_id, vocals_path)
-    if whisper_segments:
-        reference_segments = whisper_segments
-        source = f"{provider_source}+local-whisper" if provider_source != "none" else "local-whisper"
-    else:
-        reference_segments = provider_segments
-        source = provider_source
+    reference_segments = whisper_segments
+    source = f"{provider_source}+local-whisper" if provider_source != "none" else "local-whisper"
 
     segments = align_edited_lyrics(final_text, reference_segments) if final_text else []
     result = {"text": final_text, "segments": segments, "source": source}
@@ -995,202 +1234,167 @@ def prepare_lyrics(job_id, output_dir, vocals_path, requested_text, youtube_lyri
     return result
 
 
-def refresh_lyrics(job_id, raw_url, requested_text):
+def extract_lyrics_timings(job_id, raw_url, requested_text):
     url = validate_youtube_url(raw_url)
     video_id = video_id_from_url(url)
     output_dir = app_download_dir(video_id)
     stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
     _, vocals_path = resolve_cached_stems(job_id, stem_dir)
     if not is_complete_file(vocals_path):
-        raise FileNotFoundError("Karaokize this song before refreshing lyric timing.")
+        if not stem_job_active(video_id):
+            raise FileNotFoundError("Karaokize this song before extracting lyric timings.")
+        send_job(
+            job_id, "status",
+            "Waiting for Karaokize to prepare the vocal stem...",
+            phase="lyrics",
+        )
+        if not stem_ready_event(video_id).wait(STEM_WAIT_TIMEOUT_SECONDS):
+            raise TimeoutError("Timed out waiting for Karaokize to prepare the vocal stem.")
+        _, vocals_path = resolve_cached_stems(job_id, stem_dir)
+        if not is_complete_file(vocals_path):
+            raise FileNotFoundError(
+                "Karaokize did not produce a usable vocal stem."
+            )
     if not (requested_text or "").strip():
-        raise ValueError("Enter lyrics before refreshing lyric timing.")
-    lyrics = prepare_lyrics(
-        job_id, output_dir, vocals_path, requested_text,
-        {"text": "", "segments": [], "source": "manual"}, force=True,
-    )
-    send_job(job_id, "lyricsComplete", "Lyrics timing refreshed.", lyrics=lyrics, videoId=video_id)
+        raise ValueError("Enter lyrics before extracting lyric timings.")
+    with timing_job_lock(video_id):
+        lyrics = prepare_lyrics(
+            job_id, output_dir, vocals_path, requested_text,
+            {"text": "", "segments": [], "source": "manual"}, force=True,
+        )
+    send_job(job_id, "lyricsComplete", "Lyrics timings extracted.", lyrics=lyrics, videoId=video_id)
 
 
-def start_lyrics_lookup(job_id, url, cookies, output_dir, requested_text, supplied_lyrics):
-    state = {"lyrics": {"text": "", "segments": [], "source": "none"}}
-
-    def lookup():
-        searching = not (requested_text or "").strip() and not (supplied_lyrics or {}).get("text")
-        if searching:
-            send_job(job_id, "monitorStart", "Searching lyrics...", phase="lyricsLookup")
-        try:
-            if (requested_text or "").strip():
-                lyrics = {
-                    "text": requested_text.strip(), "segments": [], "source": "manual",
-                    "message": "Using edited lyrics.",
-                }
-            elif (supplied_lyrics or {}).get("text"):
-                lyrics = supplied_lyrics
-            else:
-                info = load_youtube_info(url, cookies)
-                lyrics = fetch_lrclib_lyrics(info, output_dir)
-            state["lyrics"] = lyrics
-            if lyrics.get("text"):
-                send_job(
-                    job_id,
-                    "lyricsPreview",
-                    lyrics.get("message") or "Lyrics available; word timing will be refined after separation.",
-                    lyrics=lyrics,
-                    phase="lyricsLookup",
-                )
-        except Exception as exc:
-            state["error"] = str(exc)
-            LOGGER.exception("job=%s concurrent lyric lookup failed", job_id)
-        finally:
-            if searching:
-                send_job(job_id, "monitorEnd", "", phase="lyricsLookup")
-
-    thread = threading.Thread(target=lookup, name=f"lyrics-{job_id[:8]}", daemon=True)
-    thread.start()
-    return thread, state
-
-
-def publish_stems_then_refine_lyrics(
-    job_id, video_id, final_path, instrumental_path, vocals_path,
-    output_dir, requested_text, lyrics_thread, lyrics_state, cache_hit=False,
+def publish_stems_and_complete(
+    job_id, video_id, instrumental_path, vocals_path, cache_hit=False,
 ):
     send_stems_ready(
-        job_id, video_id, final_path, instrumental_path, vocals_path, cache_hit=cache_hit,
+        job_id, video_id, instrumental_path, vocals_path, cache_hit=cache_hit,
     )
-    lyrics_thread.join()
-    provider_lyrics = lyrics_state.get("lyrics") or {"text": "", "segments": [], "source": "none"}
-    lyrics = prepare_lyrics(
-        job_id, output_dir, vocals_path, requested_text, provider_lyrics,
-    )
-    complete_job(job_id, video_id, lyrics=lyrics)
+    complete_job(job_id, video_id)
 
 
-def run_download(job_id, raw_url, cookies, requested_text="", supplied_lyrics=None):
+def run_download(job_id, raw_url, cookies):
     url = validate_youtube_url(raw_url)
     video_id = video_id_from_url(url)
     output_dir = app_download_dir(video_id)
-    final_path = output_dir / "audio.mp3"
+    legacy_audio_path = output_dir / "audio.mp3"
     separated_dir = output_dir / "separated" / "mel_band_roformer"
-    stem_dir = separated_dir / final_path.stem
+    stem_dir = separated_dir / "audio"
     instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
-    lyrics_thread, lyrics_state = start_lyrics_lookup(
-        job_id, url, cookies, output_dir, requested_text, supplied_lyrics,
-    )
-
-    if all(is_complete_file(path) for path in (final_path, instrumental_path, vocals_path)):
-        LOGGER.info("job=%s video=%s using cached audio and stems", job_id, video_id)
-        send_job(job_id, "status", "Found cached audio and separated stems.", phase="cache")
-        publish_stems_then_refine_lyrics(
-            job_id, video_id, final_path, instrumental_path, vocals_path,
-            output_dir, requested_text, lyrics_thread, lyrics_state, cache_hit=True,
+    if all(is_complete_file(path) for path in (instrumental_path, vocals_path)):
+        LOGGER.info("job=%s video=%s using cached stems", job_id, video_id)
+        unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
+        send_job(job_id, "status", "Found cached separated stems.", phase="cache")
+        publish_stems_and_complete(
+            job_id, video_id, instrumental_path, vocals_path, cache_hit=True,
         )
         return
 
-    if is_complete_file(final_path):
-        LOGGER.info("job=%s video=%s using cached audio; stems missing", job_id, video_id)
-        send_job(job_id, "status", "Downloaded audio found. Extracting missing stems...", phase="separate")
-        instrumental_path, vocals_path = run_roformer(job_id, final_path, separated_dir)
-        publish_stems_then_refine_lyrics(
-            job_id, video_id, final_path, instrumental_path, vocals_path,
-            output_dir, requested_text, lyrics_thread, lyrics_state,
-        )
+    if is_complete_file(legacy_audio_path):
+        LOGGER.info("job=%s video=%s using legacy cached MP3; stems missing", job_id, video_id)
+        send_job(job_id, "status", "Legacy downloaded audio found. Extracting missing stems...", phase="separate")
+        instrumental_path, vocals_path = run_roformer(job_id, legacy_audio_path, separated_dir)
+        unlink_best_effort(legacy_audio_path, "processed legacy source audio cleanup")
+        publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
         return
 
     yt_dlp = require_tools()
-    output_template = str(output_dir / "audio.%(ext)s")
     base_command = [
         yt_dlp,
         "--ignore-config",
         *ytdlp_runtime_args(),
         "--newline",
+        "--socket-timeout", "30",
+        "--retries", "3",
+        "--fragment-retries", "3",
         "--no-playlist",
         "--force-overwrites",
         "-f", "bestaudio/best",
-        "-x",
-        "--audio-format", "mp3",
-        "--audio-quality", "0",
         "--print", "after_move:__DKARAOKE_FILE__:%(filepath)s",
-        "-o", output_template,
     ]
     cookie_path = None
     last_line = ""
 
     try:
-        for use_cookies in (False, True):
-            if use_cookies:
-                cookie_path = write_cookie_file(cookies)
-                if not cookie_path:
-                    break
-                send_job(job_id, "status", "YouTube requested sign-in; retrying with Chrome cookies...")
+        with tempfile.TemporaryDirectory(prefix=f"dkaraoke-source-{video_id}-") as source_temp:
+            output_template = str(Path(source_temp) / "audio.%(ext)s")
+            for use_cookies in (False, True):
+                if use_cookies:
+                    cookie_path = write_cookie_file(cookies)
+                    if not cookie_path:
+                        break
+                    send_job(job_id, "status", "YouTube requested sign-in; retrying with Chrome cookies...")
 
-            command = list(base_command)
-            if cookie_path:
-                command.extend(["--cookies", str(cookie_path)])
-            command.append(url)
+                command = [*base_command, "-o", output_template]
+                if cookie_path:
+                    command.extend(["--cookies", str(cookie_path)])
+                command.append(url)
 
-            send_job(job_id, "status", "Downloading audio...", progress=0, phase="download")
-            LOGGER.info("job=%s video=%s starting yt-dlp cookies=%s", job_id, video_id, bool(cookie_path))
-            output_lines = []
-            process = subprocess.Popen(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            assert process.stdout is not None
-
-            for raw_line in process.stdout:
-                line = raw_line.strip()
-                if not line:
-                    continue
-                LOGGER.info("job=%s yt-dlp: %s", job_id, line)
-                last_line = line
-                output_lines.append(line)
-
-                if line.startswith("__DKARAOKE_FILE__:"):
-                    final_path = Path(line.split(":", 1)[1])
-                    continue
-
-                progress = PROGRESS_RE.search(line)
-                if progress:
-                    percent = float(progress.group(1))
-                    send_job(
-                        job_id,
-                        "progress",
-                        f"Downloading audio... {percent:.1f}%",
-                        progress=percent,
-                        phase="download",
-                    )
-                elif "[ExtractAudio]" in line:
-                    send_job(job_id, "status", "Converting audio to MP3...", phase="convert")
-
-            return_code = process.wait()
-            LOGGER.info("job=%s yt-dlp exited code=%s", job_id, return_code)
-            if return_code == 0:
-                if not final_path.exists():
-                    raise FileNotFoundError("yt-dlp finished, but the MP3 file was not found.")
-                instrumental_path, vocals_path = run_roformer(job_id, final_path, separated_dir)
-                publish_stems_then_refine_lyrics(
-                    job_id, video_id, final_path, instrumental_path, vocals_path,
-                    output_dir, requested_text, lyrics_thread, lyrics_state,
+                source_path = None
+                send_job(job_id, "status", "Downloading source audio...", progress=0, phase="download")
+                LOGGER.info("job=%s video=%s starting yt-dlp cookies=%s", job_id, video_id, bool(cookie_path))
+                output_lines = []
+                process = subprocess.Popen(
+                    command,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    creationflags=subprocess_creationflags(),
                 )
-                return
 
-            output_text = "\n".join(output_lines)
-            if not use_cookies and has_auth_error(output_text):
-                continue
-            raise RuntimeError(last_line or f"yt-dlp exited with code {return_code}.")
+                for raw_line in stream_process_lines(
+                    process, "yt-dlp audio download", YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
+                ):
+                    line = raw_line.strip()
+                    if not line:
+                        continue
+                    LOGGER.info("job=%s yt-dlp: %s", job_id, line)
+                    last_line = line
+                    output_lines.append(line)
 
-        raise RuntimeError(last_line or "yt-dlp could not download this audio.")
+                    if line.startswith("__DKARAOKE_FILE__:"):
+                        source_path = Path(line.split(":", 1)[1])
+                        continue
+
+                    progress = PROGRESS_RE.search(line)
+                    if progress:
+                        percent = float(progress.group(1))
+                        send_job(
+                            job_id,
+                            "progress",
+                            f"Downloading source audio... {percent:.1f}%",
+                            progress=percent,
+                            phase="download",
+                        )
+
+                return_code = process.wait(timeout=30)
+                LOGGER.info("job=%s yt-dlp exited code=%s", job_id, return_code)
+                if return_code == 0:
+                    if not source_path or not is_complete_file(source_path):
+                        raise FileNotFoundError("yt-dlp finished, but the source audio file was not found.")
+                    instrumental_path, vocals_path = run_roformer(job_id, source_path, separated_dir)
+                    unlink_best_effort(source_path, "processed temporary source audio cleanup")
+                    publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
+                    return
+
+                output_text = "\n".join(output_lines)
+                if not use_cookies and has_auth_error(output_text):
+                    continue
+                raise RuntimeError(last_line or f"yt-dlp exited with code {return_code}.")
+
+            raise RuntimeError(last_line or "yt-dlp could not download this audio.")
     finally:
         if cookie_path and cookie_path.exists():
-            cookie_path.unlink()
+            unlink_best_effort(cookie_path, "download cookie cleanup")
 
 
-def handle_message(message):
+def execute_message(message):
+    if not isinstance(message, dict):
+        raise ValueError("Native message must be a JSON object.")
     job_id = str(message.get("jobId") or "")
     if not job_id:
         raise ValueError("Missing job ID.")
@@ -1199,37 +1403,65 @@ def handle_message(message):
     if action == "checkCache":
         check_cache(job_id, str(message.get("url") or ""))
         return
-    if action == "fetchLyrics":
+    if action == "searchLrclib":
         url = validate_youtube_url(str(message.get("url") or ""))
         video_id = video_id_from_url(url)
         cookies = message.get("cookies") or []
-
-        def fetch_and_send():
-            try:
-                lyrics = fetch_best_available_lyrics(
-                    url, cookies, app_download_dir(video_id),
-                )
-                send_job(
-                    job_id, "lyrics", lyrics.get("message") or "Lyrics lookup complete.",
-                    lyrics=lyrics, videoId=video_id,
-                )
-            except Exception as exc:
-                LOGGER.exception("job=%s standalone lyric lookup failed", job_id)
-                send_job(job_id, "error", str(exc))
-
-        threading.Thread(
-            target=fetch_and_send, name=f"lyrics-fetch-{job_id[:8]}", daemon=True,
-        ).start()
+        info = load_youtube_info(url, cookies)
+        lyrics = fetch_lrclib_lyrics(info, app_download_dir(video_id))
+        send_job(
+            job_id, "lyrics", lyrics.get("message") or "LRCLIB search complete.",
+            lyrics=lyrics, videoId=video_id,
+        )
         return
-    if action == "refreshLyrics":
-        refresh_lyrics(job_id, str(message.get("url") or ""), str(message.get("lyricsText") or ""))
+    if action == "extractLyricsTimings":
+        extract_lyrics_timings(job_id, str(message.get("url") or ""), str(message.get("lyricsText") or ""))
         return
-    if action != "downloadMp3":
+    if action not in {"prepareKaraoke", "downloadMp3"}:
         raise ValueError("Unsupported backend action.")
-    run_download(
-        job_id, str(message.get("url") or ""), message.get("cookies") or [],
-        str(message.get("lyricsText") or ""), message.get("youtubeLyrics") or {},
-    )
+    run_download(job_id, str(message.get("url") or ""), message.get("cookies") or [])
+
+
+def handle_message(message):
+    if not isinstance(message, dict):
+        raise ValueError("Native message must be a JSON object.")
+    job_id = str(message.get("jobId") or "")
+    if not job_id:
+        raise ValueError("Missing job ID.")
+    action = message.get("action")
+    supported = {
+        "checkCache", "searchLrclib", "extractLyricsTimings",
+        "prepareKaraoke", "downloadMp3",
+    }
+    if action not in supported:
+        raise ValueError("Unsupported backend action.")
+
+    stem_video_id = None
+    if action in {"prepareKaraoke", "downloadMp3"}:
+        url = validate_youtube_url(str(message.get("url") or ""))
+        stem_video_id = video_id_from_url(url)
+        begin_stem_job(stem_video_id)
+
+    def run():
+        try:
+            execute_message(message)
+        except NativeMessagingDisconnected:
+            return
+        except Exception as exc:
+            LOGGER.exception("job=%s failed", job_id)
+            try:
+                send_job(job_id, "error", str(exc))
+            except NativeMessagingDisconnected:
+                return
+        finally:
+            if stem_video_id:
+                finish_stem_job(stem_video_id)
+
+    threading.Thread(
+        target=run,
+        name=f"{str(action or 'job').lower()}-{job_id[:8]}",
+        daemon=True,
+    ).start()
 
 
 def main():
@@ -1240,12 +1472,19 @@ def main():
             if message is None:
                 LOGGER.info("native messaging input closed")
                 break
-            job_id = str(message.get("jobId") or "")
+            job_id = str(message.get("jobId") or "") if isinstance(message, dict) else ""
             try:
                 handle_message(message)
+            except NativeMessagingDisconnected:
+                LOGGER.info("native messaging output closed")
+                break
             except Exception as exc:
                 LOGGER.exception("job=%s failed", job_id)
-                send_job(job_id, "error", str(exc))
+                try:
+                    send_job(job_id, "error", str(exc))
+                except NativeMessagingDisconnected:
+                    LOGGER.info("native messaging output closed while reporting job=%s failure", job_id)
+                    break
     except Exception:
         LOGGER.exception("native host stopped after an unhandled error")
         raise

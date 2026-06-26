@@ -19,13 +19,24 @@
     {
       "matches": ["https://www.youtube.com/*"],
       "css": ["styles.css"],
-      "js": ["content.js"],
+      "js": [
+        "src/content/state.js",
+        "src/content/settings.js",
+        "src/content/lyrics.js",
+        "src/content/queue.js",
+        "src/content/monitor.js",
+        "src/content/status.js",
+        "src/content/audio.js",
+        "src/content/backend.js",
+        "src/content/ui.js",
+        "src/content/bootstrap.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png", "star.svg"],
+      "resources": ["logo.png", "star.svg", "lines.svg"],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

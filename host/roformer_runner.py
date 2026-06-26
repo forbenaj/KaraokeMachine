@@ -21,7 +21,7 @@ def normalize_audio(source: Path, destination: Path) -> None:
         "-i", str(source), "-vn", "-ar", "44100", "-ac", "2",
         "-c:a", "pcm_f32le", str(destination),
     ]
-    subprocess.run(command, check=True)
+    subprocess.run(command, check=True, stdin=subprocess.DEVNULL, timeout=30 * 60)
 
 
 def load_model(repo: Path, config_path: Path, checkpoint: Path, device: torch.device):
@@ -58,8 +58,20 @@ def separate_track(model, config, normalized: Path, output_dir: Path, device: to
     np.nan_to_num(vocals, copy=False)
     np.nan_to_num(instrumental, copy=False)
     output_dir.mkdir(parents=True, exist_ok=True)
-    sf.write(output_dir / "vocals.wav", vocals, 44100, subtype="FLOAT")
-    sf.write(output_dir / "instrumental.wav", instrumental, 44100, subtype="FLOAT")
+    vocals_temp = output_dir / "vocals.tmp.wav"
+    instrumental_temp = output_dir / "instrumental.tmp.wav"
+    vocals_path = output_dir / "vocals.wav"
+    instrumental_path = output_dir / "instrumental.wav"
+    try:
+        sf.write(vocals_temp, vocals, 44100, subtype="FLOAT")
+        sf.write(instrumental_temp, instrumental, 44100, subtype="FLOAT")
+        if vocals_temp.stat().st_size <= 0 or instrumental_temp.stat().st_size <= 0:
+            raise RuntimeError("RoFormer produced an empty stem.")
+        vocals_temp.replace(vocals_path)
+        instrumental_temp.replace(instrumental_path)
+    finally:
+        vocals_temp.unlink(missing_ok=True)
+        instrumental_temp.unlink(missing_ok=True)
 
 
 def get_parser() -> argparse.ArgumentParser:
