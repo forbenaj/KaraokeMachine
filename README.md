@@ -106,11 +106,13 @@ LRCLIB receives the detected song title, artist, and duration for matching. Audi
 
 ## Troubleshooting
 
-The backend writes a rotating log, retaining up to four 5 MB files:
+The backend writes a daily rotating log. The live file stays at:
 
 ```text
 %LOCALAPPDATA%\DKaraoKe\dkaraoke.log
 ```
+
+Old logs are kept for 30 days with date suffixes such as `dkaraoke.log.2026-06-26`.
 
 Watch it while processing:
 
