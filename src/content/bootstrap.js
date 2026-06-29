@@ -1,11 +1,11 @@
 chrome.storage.local.get({
   dkaraokeEnabled: false,
-  dkaraokeLyricsStyle: "arcade",
+  dkaraokeLyricsStyle: DEFAULT_LYRICS_STYLE,
   dkaraokeSettings: DEFAULT_SETTINGS,
   dkaraokePlaybackState: DEFAULT_PLAYBACK_STATE,
 }, (result) => {
   enabled = result.dkaraokeEnabled;
-  lyricsStyle = result.dkaraokeLyricsStyle === "simple" ? "simple" : "arcade";
+  lyricsStyle = normalizeLyricsStyle(result.dkaraokeLyricsStyle);
   settings = normalizeSettings(result.dkaraokeSettings);
   applyPlaybackState(
     settings.defaultStateMode === "reset"
@@ -47,7 +47,12 @@ chrome.runtime.onMessage.addListener((message) => {
         lyricsText = message.lyrics.text;
         youtubeLyrics = message.lyrics;
         setLyrics(message.lyrics);
-        setLyricsStatus("Saved synchronized lyrics ready.", "success");
+        setLyricsStatus(
+          message.lyrics.segments?.length
+            ? "Saved synchronized lyrics ready."
+            : "Saved lyrics text ready. Extract timings to show it.",
+          message.lyrics.segments?.length ? "success" : "info"
+        );
       }
       if (message.hasStems && message.instrumentalUrl && message.vocalsUrl) {
         prepareCustomAudio(
@@ -81,11 +86,12 @@ chrome.runtime.onMessage.addListener((message) => {
     } else if (message.status === "error") {
       timingsProcessing = false;
       timingsJobId = null;
+      autoExtractAfterSearch = false;
       updateLyricsProcessButtons();
       setProcessing(processing);
       setLyricsStatus(message.message || "Could not extract lyric timings.", "error");
     } else {
-      setLyricsStatus(message.message || "Extracting word timings...", "busy");
+      setLyricsStatus(message.message || "Extracting timings...", "busy");
     }
     return;
   }
@@ -100,8 +106,13 @@ chrome.runtime.onMessage.addListener((message) => {
         youtubeLyrics.text ? (message.message || "LRCLIB lyrics loaded.") : "LRCLIB found no reliable match. You can enter lyrics manually.",
         youtubeLyrics.segments?.length ? "success" : "info"
       );
+      if (autoExtractAfterSearch) {
+        autoExtractAfterSearch = false;
+        if (youtubeLyrics.text) extractLyricsTimings();
+      }
     } else if (message.status === "error") {
       lyricsSearchJobId = null;
+      autoExtractAfterSearch = false;
       updateLyricsProcessButtons();
       setLyricsStatus(message.message || "LRCLIB search failed. You can enter lyrics manually.", "info");
     }
@@ -115,7 +126,7 @@ chrome.runtime.onMessage.addListener((message) => {
       setLyrics(message.lyrics);
     }
     setLyricsStatus(
-      message.message || "Lyrics available; refining word timing after separation...",
+      message.message || "Lyrics available; refining timing after separation...",
       message.lyrics?.segments?.length ? "success" : "busy"
     );
   } else if (message.status === "stemsReady") {

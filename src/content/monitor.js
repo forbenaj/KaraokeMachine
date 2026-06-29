@@ -2,6 +2,11 @@ function positionMonitorStar() {
   const frame = document.querySelector(".dkaraoke-monitor-frame");
   const star = frame?.querySelector(".dkaraoke-monitor-star");
   if (!frame || !star) return;
+  if (frame.classList.contains("is-monitor-prompt")) {
+    star.style.left = "0";
+    star.style.top = "0";
+    return;
+  }
   const bounds = frame.getBoundingClientRect();
   star.style.left = `${bounds.left + bounds.width / 2}px`;
   star.style.top = `${bounds.top + bounds.height / 2}px`;
@@ -32,23 +37,34 @@ function updatePlaybackMonitor() {
   const messages = Array.from(new Set(monitorActivities.values())).slice(-3);
   const hasActivity = messages.length > 0;
   const busy = hasActivity || processing || !cacheCheckComplete;
+  const prompt = Boolean(cacheCheckComplete && karaokizeAvailable && !processing && !hasActivity);
   if (!messages.length) {
     if (busy) messages.push("Loading...");
+    else if (prompt) messages.push("Press me!");
     else if (playing) messages.push("Playing");
     else if (paused) messages.push("Pause");
     else messages.push("Ready!");
   }
   status.textContent = messages.join("; ");
   monitor.dataset.count = String(messages.length);
-  monitor.dataset.state = busy ? "busy" : playing ? "playing" : paused ? "paused" : "ready";
-  monitor.classList.toggle("is-playing", !busy && playing);
-  monitor.classList.toggle("is-paused", !busy && paused);
-  monitor.classList.toggle("is-ready", !busy && !playing && !paused);
+  monitor.dataset.state = busy ? "busy" : prompt ? "prompt" : playing ? "playing" : paused ? "paused" : "ready";
+  monitor.setAttribute("aria-label", status.textContent);
+  monitor.title = prompt
+    ? "Press me to Karaokize this song."
+    : busy
+      ? "Karaoke preparation is in progress."
+      : "This song is already Karaokized.";
+  monitor.disabled = busy || !prompt;
+  monitor.classList.toggle("is-prompt", prompt);
+  monitor.classList.toggle("is-playing", !busy && !prompt && playing);
+  monitor.classList.toggle("is-paused", !busy && !prompt && paused);
+  monitor.classList.toggle("is-ready", !busy && !prompt && !playing && !paused);
   if (frame) {
     frame.classList.toggle("is-monitor-busy", busy);
-    frame.classList.toggle("is-monitor-playing", !busy && playing);
-    frame.classList.toggle("is-monitor-paused", !busy && paused);
-    frame.classList.toggle("is-monitor-ready", !busy && !playing && !paused);
+    frame.classList.toggle("is-monitor-prompt", prompt);
+    frame.classList.toggle("is-monitor-playing", !busy && !prompt && playing);
+    frame.classList.toggle("is-monitor-paused", !busy && !prompt && paused);
+    frame.classList.toggle("is-monitor-ready", !busy && !prompt && !playing && !paused);
   }
   monitor.replaceChildren(...messages.map((message) => {
     const item = document.createElement("span");

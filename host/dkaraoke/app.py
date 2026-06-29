@@ -6,7 +6,6 @@ from .logging_setup import LOGGER, LOG_PATH
 from .messaging import NativeMessagingDisconnected, read_message, send_job
 from .paths import begin_stem_job, finish_stem_job, validate_youtube_url, video_id_from_url, app_download_dir
 from .pipeline import check_cache, extract_lyrics_timings, run_download
-from .youtube import load_youtube_info
 from .lyrics import fetch_lrclib_lyrics
 
 def execute_message(message):
@@ -23,20 +22,33 @@ def execute_message(message):
     if action == "searchLrclib":
         url = validate_youtube_url(str(message.get("url") or ""))
         video_id = video_id_from_url(url)
-        cookies = message.get("cookies") or []
-        info = load_youtube_info(url, cookies)
-        lyrics = fetch_lrclib_lyrics(info, app_download_dir(video_id))
+        lyrics = fetch_lrclib_lyrics({
+            "title": str(message.get("title") or ""),
+            "duration": message.get("duration"),
+        }, app_download_dir(video_id))
         send_job(
             job_id, "lyrics", lyrics.get("message") or "LRCLIB search complete.",
             lyrics=lyrics, videoId=video_id,
         )
         return
     if action == "extractLyricsTimings":
-        extract_lyrics_timings(job_id, str(message.get("url") or ""), str(message.get("lyricsText") or ""))
+        extract_lyrics_timings(
+            job_id,
+            str(message.get("url") or ""),
+            str(message.get("lyricsText") or ""),
+            str(message.get("timingMethod") or ""),
+            str(message.get("timingSource") or ""),
+            message.get("cookies") or [],
+        )
         return
     if action not in {"prepareKaraoke", "downloadMp3"}:
         raise ValueError("Unsupported backend action.")
-    run_download(job_id, str(message.get("url") or ""), message.get("cookies") or [])
+    run_download(
+        job_id,
+        str(message.get("url") or ""),
+        message.get("cookies") or [],
+        message.get("lyricsTiming") if isinstance(message.get("lyricsTiming"), dict) else None,
+    )
 
 
 def handle_message(message):
@@ -108,5 +120,3 @@ def main():
     finally:
         stop_audio_server()
         LOGGER.info("native host stopped")
-
-

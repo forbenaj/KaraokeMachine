@@ -36,7 +36,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png", "star.svg", "lines.svg"],
+      "resources": ["logo.png", "star.svg", "jagged_star.svg", "lines.svg"],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

@@ -32,11 +32,16 @@ function mountKaraokeMenu() {
     star.className = "dkaraoke-monitor-star";
     star.setAttribute("aria-hidden", "true");
     star.style.setProperty("--dk-star-image", `url("${chrome.runtime.getURL("star.svg")}")`);
+    star.style.setProperty("--dk-jagged-star-image", `url("${chrome.runtime.getURL("jagged_star.svg")}")`);
     star.style.setProperty("--dk-lines-image", `url("${chrome.runtime.getURL("lines.svg")}")`);
-    const display = document.createElement("div");
+    const display = document.createElement("button");
     display.id = MONITOR_ID;
+    display.type = "button";
     display.className = "dkaraoke-monitor-display";
-    display.setAttribute("aria-hidden", "true");
+    display.addEventListener("click", () => {
+      if (processing || !cacheCheckComplete || !karaokizeAvailable) return;
+      startKaraokize();
+    });
     const monitorText = document.createElement("span");
     monitorText.id = MONITOR_TEXT_ID;
     monitorText.className = "dkaraoke-visually-hidden";
@@ -135,7 +140,7 @@ function mountKaraokeMenu() {
     styleLabel.textContent = "Lyrics style";
     const styleSelector = document.createElement("select");
     styleSelector.id = LYRICS_STYLE_ID;
-    for (const [value, label] of [["arcade", "Arcade"], ["simple", "Simple"]]) {
+    for (const [value, label] of [["classic", "Classic"], ["arcade", "Arcade"], ["simple", "Simple"]]) {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
@@ -179,19 +184,13 @@ function mountKaraokeMenu() {
     progress.appendChild(progressFill);
     statusStack.append(status, progress);
 
-    const karaokize = document.createElement("button");
-    karaokize.id = KARAOKIZE_ID;
-    karaokize.type = "button";
-    karaokize.textContent = "Karaokize!";
-    karaokize.addEventListener("click", startKaraokize);
-
     const settingsButton = document.createElement("button");
     settingsButton.id = SETTINGS_BUTTON_ID;
     settingsButton.type = "button";
     settingsButton.textContent = "Settings";
     settingsButton.addEventListener("click", openSettingsModal);
 
-    actionRow.append(statusStack, karaokize, settingsButton);
+    actionRow.append(statusStack, settingsButton);
     menu.append(header, instruments, actionRow);
     leftPanel.appendChild(menu);
     rightPanel.appendChild(lyricsEditor);
@@ -308,6 +307,7 @@ function remountAfterNavigation() {
   lyricsSearchJobId = null;
   timingsProcessing = false;
   timingsJobId = null;
+  autoExtractAfterSearch = false;
   lyricsText = "";
   youtubeLyrics = { text: "", segments: [], source: "none" };
   if (settings.defaultStateMode === "reset") applyPlaybackState(defaultPlaybackState());

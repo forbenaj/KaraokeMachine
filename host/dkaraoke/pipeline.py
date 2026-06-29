@@ -1,16 +1,39 @@
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 from .audio_server import register_audio
 from .cache import is_complete_file, read_json_cache, unlink_best_effort
-from .constants import PROGRESS_RE, ROFORMER_TIMEOUT_SECONDS, STEM_WAIT_TIMEOUT_SECONDS, YTDLP_DOWNLOAD_TIMEOUT_SECONDS
+from .constants import (
+    DEFAULT_LYRICS_TIMING_METHOD,
+    DEFAULT_LYRICS_TIMING_SOURCE,
+    DEFAULT_TIMING_PIPELINE_SCHEDULE,
+    FFMPEG_TIMEOUT_SECONDS,
+    PROGRESS_RE,
+    ROFORMER_TIMEOUT_SECONDS,
+    STEM_WAIT_TIMEOUT_SECONDS,
+    YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
+    TIMING_PIPELINE_SCHEDULES,
+)
 from .logging_setup import LOGGER
-from .lyrics import prepare_lyrics
+from .lyrics import (
+    fetch_lrclib_lyrics,
+    normalize_cached_lyrics,
+    normalize_lyrics_timing_method,
+    normalize_lyrics_timing_source,
+    prepare_lyrics,
+)
 from .messaging import send_job
 from .paths import app_download_dir, stem_job_active, stem_ready_event, timing_job_lock, validate_youtube_url, video_id_from_url
-from .processes import format_remaining_time, roformer_progress_from_line, stream_process_lines, subprocess_creationflags
-from .stems import resolve_cached_stems, stem_paths
+from .processes import (
+    format_remaining_time,
+    roformer_progress_from_line,
+    stream_process_lines,
+    subprocess_creationflags,
+    terminate_process_tree,
+)
+from .stems import compress_stems, resolve_cached_stems, stem_paths
 from .youtube import has_auth_error, require_tools, write_cookie_file, ytdlp_runtime_args
 
 def send_stems_ready(job_id, video_id, instrumental_path, vocals_path, cache_hit=False):
@@ -45,16 +68,20 @@ def check_cache(job_id, raw_url):
     stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
     instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
 
-    # Whisper-refined timings are the local authority. LRCLIB is the immediate
-    # fallback when refinement has not run yet.
-    lyrics = read_json_cache(output_dir / "lyrics.json")
-    has_whisper_timing = (
+    # Locally extracted timings are the authority. LRCLIB is the immediate
+    # fallback when local timing has not run yet. Legacy Whisper-produced
+    # caches remain readable so existing songs keep working after upgrades.
+    lyrics = normalize_cached_lyrics(read_json_cache(output_dir / "lyrics.json"))
+    has_local_timing = (
         (lyrics or {}).get("text")
         and (lyrics or {}).get("segments")
-        and "local-whisper" in ((lyrics or {}).get("source") or "")
+        and any(
+            marker in ((lyrics or {}).get("source") or "")
+            for marker in ("local-ctc", "local-silero-vad", "local-whisper")
+        )
     )
-    if not has_whisper_timing:
-        lyrics = read_json_cache(output_dir / "lrclib_lyrics.json")
+    if not has_local_timing:
+        lyrics = normalize_cached_lyrics(read_json_cache(output_dir / "lrclib_lyrics.json"))
     if not (lyrics or {}).get("text"):
         lyrics = {"text": "", "segments": [], "source": "none"}
     else:
@@ -172,71 +199,7 @@ def run_roformer(job_id, source_path, output_dir):
         raise
 
 
-def extract_lyrics_timings(job_id, raw_url, requested_text):
-    url = validate_youtube_url(raw_url)
-    video_id = video_id_from_url(url)
-    output_dir = app_download_dir(video_id)
-    stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
-    _, vocals_path = resolve_cached_stems(job_id, stem_dir)
-    if not is_complete_file(vocals_path):
-        if not stem_job_active(video_id):
-            raise FileNotFoundError("Karaokize this song before extracting lyric timings.")
-        send_job(
-            job_id, "status",
-            "Waiting for Karaokize to prepare the vocal stem...",
-            phase="lyrics",
-        )
-        if not stem_ready_event(video_id).wait(STEM_WAIT_TIMEOUT_SECONDS):
-            raise TimeoutError("Timed out waiting for Karaokize to prepare the vocal stem.")
-        _, vocals_path = resolve_cached_stems(job_id, stem_dir)
-        if not is_complete_file(vocals_path):
-            raise FileNotFoundError(
-                "Karaokize did not produce a usable vocal stem."
-            )
-    if not (requested_text or "").strip():
-        raise ValueError("Enter lyrics before extracting lyric timings.")
-    with timing_job_lock(video_id):
-        lyrics = prepare_lyrics(
-            job_id, output_dir, vocals_path, requested_text,
-            {"text": "", "segments": [], "source": "manual"}, force=True,
-        )
-    send_job(job_id, "lyricsComplete", "Lyrics timings extracted.", lyrics=lyrics, videoId=video_id)
-
-
-def publish_stems_and_complete(
-    job_id, video_id, instrumental_path, vocals_path, cache_hit=False,
-):
-    send_stems_ready(
-        job_id, video_id, instrumental_path, vocals_path, cache_hit=cache_hit,
-    )
-    complete_job(job_id, video_id)
-
-
-def run_download(job_id, raw_url, cookies):
-    url = validate_youtube_url(raw_url)
-    video_id = video_id_from_url(url)
-    output_dir = app_download_dir(video_id)
-    legacy_audio_path = output_dir / "audio.mp3"
-    separated_dir = output_dir / "separated" / "mel_band_roformer"
-    stem_dir = separated_dir / "audio"
-    instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
-    if all(is_complete_file(path) for path in (instrumental_path, vocals_path)):
-        LOGGER.info("job=%s video=%s using cached stems", job_id, video_id)
-        unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
-        send_job(job_id, "status", "Found cached separated stems.", phase="cache")
-        publish_stems_and_complete(
-            job_id, video_id, instrumental_path, vocals_path, cache_hit=True,
-        )
-        return
-
-    if is_complete_file(legacy_audio_path):
-        LOGGER.info("job=%s video=%s using legacy cached MP3; stems missing", job_id, video_id)
-        send_job(job_id, "status", "Legacy downloaded audio found. Extracting missing stems...", phase="separate")
-        instrumental_path, vocals_path = run_roformer(job_id, legacy_audio_path, separated_dir)
-        unlink_best_effort(legacy_audio_path, "processed legacy source audio cleanup")
-        publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
-        return
-
+def download_source_audio(job_id, url, video_id, cookies, output_template, phase="download"):
     yt_dlp = require_tools()
     base_command = [
         yt_dlp,
@@ -253,78 +216,325 @@ def run_download(job_id, raw_url, cookies):
     ]
     cookie_path = None
     last_line = ""
-
     try:
-        with tempfile.TemporaryDirectory(prefix=f"dkaraoke-source-{video_id}-") as source_temp:
-            output_template = str(Path(source_temp) / "audio.%(ext)s")
-            for use_cookies in (False, True):
-                if use_cookies:
-                    cookie_path = write_cookie_file(cookies)
-                    if not cookie_path:
-                        break
-                    send_job(job_id, "status", "YouTube requested sign-in; retrying with Chrome cookies...")
-
-                command = [*base_command, "-o", output_template]
-                if cookie_path:
-                    command.extend(["--cookies", str(cookie_path)])
-                command.append(url)
-
-                source_path = None
-                send_job(job_id, "status", "Downloading source audio...", progress=0, phase="download")
-                LOGGER.info("job=%s video=%s starting yt-dlp cookies=%s", job_id, video_id, bool(cookie_path))
-                output_lines = []
-                process = subprocess.Popen(
-                    command,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    creationflags=subprocess_creationflags(),
+        for use_cookies in (False, True):
+            if use_cookies:
+                cookie_path = write_cookie_file(cookies)
+                if not cookie_path:
+                    break
+                send_job(
+                    job_id, "status",
+                    "YouTube requested sign-in; retrying with Chrome cookies...",
+                    phase=phase,
                 )
 
-                for raw_line in stream_process_lines(
-                    process, "yt-dlp audio download", YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
-                ):
-                    line = raw_line.strip()
-                    if not line:
-                        continue
-                    LOGGER.info("job=%s yt-dlp: %s", job_id, line)
-                    last_line = line
-                    output_lines.append(line)
+            command = [*base_command, "-o", str(output_template)]
+            if cookie_path:
+                command.extend(["--cookies", str(cookie_path)])
+            command.append(url)
 
-                    if line.startswith("__DKARAOKE_FILE__:"):
-                        source_path = Path(line.split(":", 1)[1])
-                        continue
+            source_path = None
+            send_job(job_id, "status", "Downloading source audio...", progress=0, phase=phase)
+            LOGGER.info("job=%s video=%s starting yt-dlp cookies=%s", job_id, video_id, bool(cookie_path))
+            output_lines = []
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                creationflags=subprocess_creationflags(),
+            )
 
-                    progress = PROGRESS_RE.search(line)
-                    if progress:
-                        percent = float(progress.group(1))
-                        send_job(
-                            job_id,
-                            "progress",
-                            f"Downloading source audio... {percent:.1f}%",
-                            progress=percent,
-                            phase="download",
-                        )
-
-                return_code = process.wait(timeout=30)
-                LOGGER.info("job=%s yt-dlp exited code=%s", job_id, return_code)
-                if return_code == 0:
-                    if not source_path or not is_complete_file(source_path):
-                        raise FileNotFoundError("yt-dlp finished, but the source audio file was not found.")
-                    instrumental_path, vocals_path = run_roformer(job_id, source_path, separated_dir)
-                    unlink_best_effort(source_path, "processed temporary source audio cleanup")
-                    publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
-                    return
-
-                output_text = "\n".join(output_lines)
-                if not use_cookies and has_auth_error(output_text):
+            for raw_line in stream_process_lines(
+                process, "yt-dlp audio download", YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
+            ):
+                line = raw_line.strip()
+                if not line:
                     continue
-                raise RuntimeError(last_line or f"yt-dlp exited with code {return_code}.")
+                LOGGER.info("job=%s yt-dlp: %s", job_id, line)
+                last_line = line
+                output_lines.append(line)
 
-            raise RuntimeError(last_line or "yt-dlp could not download this audio.")
+                if line.startswith("__DKARAOKE_FILE__:"):
+                    source_path = Path(line.split(":", 1)[1])
+                    continue
+
+                progress = PROGRESS_RE.search(line)
+                if progress:
+                    percent = float(progress.group(1))
+                    send_job(
+                        job_id,
+                        "progress",
+                        f"Downloading source audio... {percent:.1f}%",
+                        progress=percent,
+                        phase=phase,
+                    )
+
+            return_code = process.wait(timeout=30)
+            LOGGER.info("job=%s yt-dlp exited code=%s", job_id, return_code)
+            if return_code == 0:
+                if not source_path or not is_complete_file(source_path):
+                    raise FileNotFoundError("yt-dlp finished, but the source audio file was not found.")
+                return source_path
+
+            output_text = "\n".join(output_lines)
+            if not use_cookies and has_auth_error(output_text):
+                continue
+            raise RuntimeError(last_line or f"yt-dlp exited with code {return_code}.")
+
+        raise RuntimeError(last_line or "yt-dlp could not download this audio.")
     finally:
         if cookie_path and cookie_path.exists():
             unlink_best_effort(cookie_path, "download cookie cleanup")
+
+
+def normalize_timing_audio(job_id, source_path, output_path):
+    send_job(job_id, "status", "Preparing source audio for lyric timing...", phase="lyrics")
+    LOGGER.info("job=%s normalizing lyric timing audio source=%s", job_id, source_path)
+    result = subprocess.run(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "-i", str(source_path), "-vn", "-map", "0:a:0",
+            "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+            str(output_path),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdin=subprocess.DEVNULL,
+        timeout=FFMPEG_TIMEOUT_SECONDS,
+        creationflags=subprocess_creationflags(),
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "FFmpeg could not prepare source audio for lyric timing.")
+    if not is_complete_file(output_path):
+        raise FileNotFoundError("FFmpeg did not produce usable timing audio.")
+    return output_path
+
+
+def normalize_timing_pipeline_schedule(value):
+    return value if value in TIMING_PIPELINE_SCHEDULES else DEFAULT_TIMING_PIPELINE_SCHEDULE
+
+
+def normalized_original_timing_request(lyrics_timing):
+    if not isinstance(lyrics_timing, dict):
+        return None
+    timing_job_id = str(lyrics_timing.get("jobId") or "")
+    requested_text = str(lyrics_timing.get("lyricsText") or "")
+    timing_source = normalize_lyrics_timing_source(lyrics_timing.get("timingSource"))
+    if not timing_job_id or timing_source != "original":
+        return None
+    return {
+        "jobId": timing_job_id,
+        "lyricsText": requested_text,
+        "timingMethod": normalize_lyrics_timing_method(lyrics_timing.get("timingMethod")),
+        "timingSource": timing_source,
+        "timingSchedule": normalize_timing_pipeline_schedule(lyrics_timing.get("timingSchedule")),
+        "title": str(lyrics_timing.get("title") or ""),
+        "duration": lyrics_timing.get("duration"),
+    }
+
+
+def run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timing_request):
+    timing_job_id = timing_request["jobId"]
+    requested_text = timing_request["lyricsText"]
+    timing_method = timing_request["timingMethod"]
+    timing_source = timing_request["timingSource"]
+    try:
+        provider_lyrics = read_json_cache(output_dir / "lrclib_lyrics.json")
+        if not isinstance(provider_lyrics, dict):
+            provider_lyrics = {"text": "", "segments": [], "source": "none"}
+        if not requested_text.strip() and not provider_lyrics.get("text"):
+            send_job(timing_job_id, "status", "Searching LRCLIB for lyrics...", phase="lyrics")
+            provider_lyrics = fetch_lrclib_lyrics({
+                "title": timing_request["title"],
+                "duration": timing_request["duration"],
+            }, output_dir)
+        final_text = requested_text.strip() or str((provider_lyrics or {}).get("text") or "").strip()
+        if not final_text:
+            raise ValueError((provider_lyrics or {}).get("message") or "No lyrics were available for timing extraction.")
+        with timing_job_lock(video_id):
+            lyrics = prepare_lyrics(
+                timing_job_id, output_dir, timing_audio_path, final_text,
+                provider_lyrics, force=True, timing_method=timing_method,
+                timing_source=timing_source,
+            )
+        method_label = "Silero VAD" if timing_method == "silero-vad" else "CTC forced alignment"
+        send_job(
+            timing_job_id,
+            "lyricsComplete",
+            f"Lyrics timings extracted with {method_label} from original audio.",
+            lyrics=lyrics,
+            videoId=video_id,
+        )
+    except Exception as exc:
+        LOGGER.exception("job=%s source timing failed", timing_job_id)
+        send_job(timing_job_id, "error", str(exc), videoId=video_id)
+
+
+def run_original_audio_timing_inline(video_id, output_dir, source_path, timing_request):
+    timing_temp = tempfile.TemporaryDirectory(prefix=f"dkaraoke-lyrics-shared-{video_id}-")
+    try:
+        timing_audio_path = Path(timing_temp.name) / "timing-audio.wav"
+        normalize_timing_audio(timing_request["jobId"], source_path, timing_audio_path)
+        run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timing_request)
+    except Exception as exc:
+        LOGGER.exception("job=%s could not prepare source timing", timing_request["jobId"])
+        send_job(timing_request["jobId"], "error", str(exc), videoId=video_id)
+    finally:
+        timing_temp.cleanup()
+
+
+def start_original_audio_timing_thread(video_id, output_dir, source_path, timing_request):
+    timing_temp = tempfile.TemporaryDirectory(prefix=f"dkaraoke-lyrics-shared-{video_id}-")
+    timing_audio_path = Path(timing_temp.name) / "timing-audio.wav"
+    try:
+        normalize_timing_audio(timing_request["jobId"], source_path, timing_audio_path)
+    except Exception as exc:
+        LOGGER.exception("job=%s could not prepare parallel source timing", timing_request["jobId"])
+        send_job(timing_request["jobId"], "error", str(exc), videoId=video_id)
+        timing_temp.cleanup()
+        return None
+
+    def run_timing():
+        try:
+            run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timing_request)
+        finally:
+            timing_temp.cleanup()
+
+    thread = threading.Thread(
+        target=run_timing,
+        name=f"lyrics-original-{timing_request['jobId'][:8]}",
+        daemon=True,
+    )
+    thread.start()
+    return thread
+
+
+def extract_lyrics_timings(
+    job_id, raw_url, requested_text, timing_method=DEFAULT_LYRICS_TIMING_METHOD,
+    timing_source=DEFAULT_LYRICS_TIMING_SOURCE, cookies=None,
+):
+    url = validate_youtube_url(raw_url)
+    video_id = video_id_from_url(url)
+    timing_method = normalize_lyrics_timing_method(timing_method)
+    timing_source = normalize_lyrics_timing_source(timing_source)
+    output_dir = app_download_dir(video_id)
+    stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+    if not (requested_text or "").strip():
+        raise ValueError("Enter lyrics before extracting lyric timings.")
+    provider_lyrics = read_json_cache(output_dir / "lrclib_lyrics.json")
+    if not isinstance(provider_lyrics, dict):
+        provider_lyrics = {"text": "", "segments": [], "source": "manual"}
+    with timing_job_lock(video_id):
+        if timing_source == "original":
+            with tempfile.TemporaryDirectory(prefix=f"dkaraoke-lyrics-source-{video_id}-") as source_temp:
+                source_path = download_source_audio(
+                    job_id, url, video_id, cookies or [],
+                    Path(source_temp) / "audio.%(ext)s",
+                    phase="lyrics",
+                )
+                timing_audio_path = normalize_timing_audio(
+                    job_id, source_path, Path(source_temp) / "timing-audio.wav",
+                )
+                lyrics = prepare_lyrics(
+                    job_id, output_dir, timing_audio_path, requested_text,
+                    provider_lyrics, force=True, timing_method=timing_method,
+                    timing_source=timing_source,
+                )
+                unlink_best_effort(source_path, "processed lyrics source audio cleanup")
+        else:
+            _, vocals_path = resolve_cached_stems(job_id, stem_dir)
+            if not is_complete_file(vocals_path):
+                if not stem_job_active(video_id):
+                    raise FileNotFoundError("Karaokize this song before extracting lyric timings.")
+                send_job(
+                    job_id, "status",
+                    "Waiting for Karaokize to prepare the vocal stem...",
+                    phase="lyrics",
+                )
+                if not stem_ready_event(video_id).wait(STEM_WAIT_TIMEOUT_SECONDS):
+                    raise TimeoutError("Timed out waiting for Karaokize to prepare the vocal stem.")
+                _, vocals_path = resolve_cached_stems(job_id, stem_dir)
+                if not is_complete_file(vocals_path):
+                    raise FileNotFoundError(
+                        "Karaokize did not produce a usable vocal stem."
+                    )
+            lyrics = prepare_lyrics(
+                job_id, output_dir, vocals_path, requested_text,
+                provider_lyrics, force=True, timing_method=timing_method,
+                timing_source=timing_source,
+            )
+    method_label = "Silero VAD" if timing_method == "silero-vad" else "CTC forced alignment"
+    source_label = "original audio" if timing_source == "original" else "vocal stem"
+    send_job(
+        job_id,
+        "lyricsComplete",
+        f"Lyrics timings extracted with {method_label} from {source_label}.",
+        lyrics=lyrics,
+        videoId=video_id,
+    )
+
+
+def publish_stems_and_complete(
+    job_id, video_id, instrumental_path, vocals_path, cache_hit=False,
+):
+    send_stems_ready(
+        job_id, video_id, instrumental_path, vocals_path, cache_hit=cache_hit,
+    )
+    complete_job(job_id, video_id)
+
+
+def run_download(job_id, raw_url, cookies, lyrics_timing=None):
+    url = validate_youtube_url(raw_url)
+    video_id = video_id_from_url(url)
+    output_dir = app_download_dir(video_id)
+    timing_request = normalized_original_timing_request(lyrics_timing)
+    legacy_audio_path = output_dir / "audio.mp3"
+    separated_dir = output_dir / "separated" / "mel_band_roformer"
+    stem_dir = separated_dir / "audio"
+    instrumental_path, vocals_path = resolve_cached_stems(job_id, stem_dir)
+    if all(is_complete_file(path) for path in (instrumental_path, vocals_path)):
+        LOGGER.info("job=%s video=%s using cached stems", job_id, video_id)
+        unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
+        send_job(job_id, "status", "Found cached separated stems.", phase="cache")
+        publish_stems_and_complete(
+            job_id, video_id, instrumental_path, vocals_path, cache_hit=True,
+        )
+        return
+
+    if is_complete_file(legacy_audio_path):
+        LOGGER.info("job=%s video=%s using legacy cached MP3; stems missing", job_id, video_id)
+        send_job(job_id, "status", "Legacy downloaded audio found. Extracting missing stems...", phase="separate")
+        if timing_request and timing_request["timingSchedule"] == "lyrics-first":
+            run_original_audio_timing_inline(video_id, output_dir, legacy_audio_path, timing_request)
+            timing_request = None
+        if timing_request and timing_request["timingSchedule"] == "parallel":
+            start_original_audio_timing_thread(video_id, output_dir, legacy_audio_path, timing_request)
+            timing_request = None
+        instrumental_path, vocals_path = run_roformer(job_id, legacy_audio_path, separated_dir)
+        publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
+        if timing_request:
+            run_original_audio_timing_inline(video_id, output_dir, legacy_audio_path, timing_request)
+        unlink_best_effort(legacy_audio_path, "processed legacy source audio cleanup")
+        return
+
+    with tempfile.TemporaryDirectory(prefix=f"dkaraoke-source-{video_id}-") as source_temp:
+        source_path = download_source_audio(
+            job_id, url, video_id, cookies, Path(source_temp) / "audio.%(ext)s",
+        )
+        if timing_request and timing_request["timingSchedule"] == "lyrics-first":
+            run_original_audio_timing_inline(video_id, output_dir, source_path, timing_request)
+            timing_request = None
+        if timing_request and timing_request["timingSchedule"] == "parallel":
+            start_original_audio_timing_thread(video_id, output_dir, source_path, timing_request)
+            timing_request = None
+        instrumental_path, vocals_path = run_roformer(job_id, source_path, separated_dir)
+        publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
+        if timing_request:
+            run_original_audio_timing_inline(video_id, output_dir, source_path, timing_request)
+        unlink_best_effort(source_path, "processed temporary source audio cleanup")

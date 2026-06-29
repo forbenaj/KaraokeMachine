@@ -25,11 +25,6 @@ function setProcessStatus(message, state = "idle", progress = null) {
 
 function setProcessing(nextProcessing) {
   processing = nextProcessing;
-  const button = document.getElementById(KARAOKIZE_ID);
-  if (button) {
-    button.disabled = processing || !cacheCheckComplete || !karaokizeAvailable;
-    button.textContent = processing ? "Karaokizing..." : "Karaokize!";
-  }
   setProcessProgress();
   updateLyricsProcessButtons();
   updatePlaybackMonitor();

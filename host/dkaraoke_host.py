@@ -11,7 +11,9 @@ _APP_EXECUTE_MESSAGE = app.execute_message
 _APP_HANDLE_MESSAGE = app.handle_message
 _APP_MAIN = app.main
 _LYRICS_RUNNER_PATH = lyrics.lyrics_runner_path
-_LYRICS_TRANSCRIBE = lyrics.transcribe_lyrics
+_LYRICS_ALIGN = lyrics.align_lyrics
+_LYRICS_SILERO_VAD_RUNNER_PATH = lyrics.silero_vad_runner_path
+_LYRICS_ALIGN_SILERO_VAD = lyrics.align_lyrics_with_silero_vad
 _PIPELINE_CHECK_CACHE = pipeline.check_cache
 _PIPELINE_EXTRACT_LYRICS_TIMINGS = pipeline.extract_lyrics_timings
 _PIPELINE_PUBLISH_STEMS_AND_COMPLETE = pipeline.publish_stems_and_complete
@@ -20,14 +22,12 @@ _STEMS_COMPRESS = stems.compress_stems
 _STEMS_RESOLVE_CACHED = stems.resolve_cached_stems
 _YOUTUBE_HAS_AUTH_ERROR = youtube.has_auth_error
 _YOUTUBE_REQUIRE_TOOLS = youtube.require_tools
-_YOUTUBE_RUN_YTDLP_JSON = youtube.run_ytdlp_json
 _YOUTUBE_RUNTIME_ARGS = youtube.ytdlp_runtime_args
 _YOUTUBE_WRITE_COOKIE_FILE = youtube.write_cookie_file
 
 AUTH_ERROR_MARKERS = constants.AUTH_ERROR_MARKERS
 LYRICS_TIMEOUT_SECONDS = constants.LYRICS_TIMEOUT_SECONDS
 STEM_WAIT_TIMEOUT_SECONDS = constants.STEM_WAIT_TIMEOUT_SECONDS
-YTDLP_METADATA_TIMEOUT_SECONDS = constants.YTDLP_METADATA_TIMEOUT_SECONDS
 NativeMessagingDisconnected = messaging.NativeMessagingDisconnected
 
 begin_stem_job = paths.begin_stem_job
@@ -49,24 +49,31 @@ stem_paths = stems.stem_paths
 stop_audio_server = audio_server.stop_audio_server
 unlink_best_effort = cache.unlink_best_effort
 validate_stem_mp3 = stems.validate_stem_mp3
-youtube_music_metadata = lyrics.youtube_music_metadata
+song_metadata_from_title = lyrics.song_metadata_from_title
 
 
 def _sync_patchable_globals():
     app.execute_message = execute_message
+    app.app_download_dir = app_download_dir
+    app.extract_lyrics_timings = extract_lyrics_timings
+    app.fetch_lrclib_lyrics = fetch_lrclib_lyrics
     app.handle_message = handle_message
     app.read_message = read_message
     app.send_job = send_job
     app.stop_audio_server = stop_audio_server
 
     lyrics.lyrics_runner_path = lyrics_runner_path
+    lyrics.align_lyrics = align_lyrics
+    lyrics.silero_vad_runner_path = silero_vad_runner_path
+    lyrics.align_lyrics_with_silero_vad = align_lyrics_with_silero_vad
     lyrics.send_job = send_job
     lyrics.subprocess = subprocess
-    lyrics.transcribe_lyrics = transcribe_lyrics
 
     pipeline.app_download_dir = app_download_dir
+    pipeline.compress_stems = compress_stems
     pipeline.complete_job = complete_job
     pipeline.has_auth_error = has_auth_error
+    pipeline.fetch_lrclib_lyrics = fetch_lrclib_lyrics
     pipeline.prepare_lyrics = prepare_lyrics
     pipeline.publish_stems_and_complete = publish_stems_and_complete
     pipeline.register_audio = register_audio
@@ -113,9 +120,16 @@ def execute_message(message):
     return _APP_EXECUTE_MESSAGE(message)
 
 
-def extract_lyrics_timings(job_id, raw_url, requested_text):
+def extract_lyrics_timings(
+    job_id, raw_url, requested_text,
+    timing_method=constants.DEFAULT_LYRICS_TIMING_METHOD,
+    timing_source=constants.DEFAULT_LYRICS_TIMING_SOURCE,
+    cookies=None,
+):
     _sync_patchable_globals()
-    return _PIPELINE_EXTRACT_LYRICS_TIMINGS(job_id, raw_url, requested_text)
+    return _PIPELINE_EXTRACT_LYRICS_TIMINGS(
+        job_id, raw_url, requested_text, timing_method, timing_source, cookies,
+    )
 
 
 def handle_message(message):
@@ -129,6 +143,10 @@ def has_auth_error(output_text):
 
 def lyrics_runner_path():
     return _LYRICS_RUNNER_PATH()
+
+
+def silero_vad_runner_path():
+    return _LYRICS_SILERO_VAD_RUNNER_PATH()
 
 
 def main():
@@ -156,14 +174,9 @@ def resolve_cached_stems(job_id, stem_dir):
     return _STEMS_RESOLVE_CACHED(job_id, stem_dir)
 
 
-def run_download(job_id, raw_url, cookies):
+def run_download(job_id, raw_url, cookies, lyrics_timing=None):
     _sync_patchable_globals()
-    return _PIPELINE_RUN_DOWNLOAD(job_id, raw_url, cookies)
-
-
-def run_ytdlp_json(url, cookie_path=None):
-    _sync_patchable_globals()
-    return _YOUTUBE_RUN_YTDLP_JSON(url, cookie_path)
+    return _PIPELINE_RUN_DOWNLOAD(job_id, raw_url, cookies, lyrics_timing)
 
 
 def stem_job_active(video_id):
@@ -178,9 +191,14 @@ def timing_job_lock(video_id):
     return paths.timing_job_lock(video_id)
 
 
-def transcribe_lyrics(job_id, vocals_path):
+def align_lyrics(job_id, vocals_path, lyrics_text):
     _sync_patchable_globals()
-    return _LYRICS_TRANSCRIBE(job_id, vocals_path)
+    return _LYRICS_ALIGN(job_id, vocals_path, lyrics_text)
+
+
+def align_lyrics_with_silero_vad(job_id, vocals_path, lyrics_text):
+    _sync_patchable_globals()
+    return _LYRICS_ALIGN_SILERO_VAD(job_id, vocals_path, lyrics_text)
 
 
 def validate_youtube_url(raw_url):

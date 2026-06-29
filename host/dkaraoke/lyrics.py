@@ -8,17 +8,31 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .cache import is_complete_file, read_json_cache, write_json_cache
-from .constants import LRCLIB_SEARCH_URL, LRC_TIMESTAMP_RE, LYRICS_TIMEOUT_SECONDS, LYRICS_TIMING_VERSION
+from .constants import (
+    DEFAULT_LYRICS_TIMING_METHOD,
+    DEFAULT_LYRICS_TIMING_SOURCE,
+    LRCLIB_SEARCH_URL,
+    LRC_TIMESTAMP_RE,
+    LYRICS_TIMEOUT_SECONDS,
+    LYRICS_TIMING_METHODS,
+    LYRICS_TIMING_SOURCES,
+    LYRICS_TIMING_VERSION,
+)
 from .logging_setup import LOGGER
 from .messaging import send_job
 from .processes import subprocess_creationflags
 
-def normalize_word(text):
-    return re.sub(r"[^\w']+", "", text, flags=re.UNICODE).casefold()
-
-
 def split_words(text):
     return re.findall(r"\S+", text or "")
+
+
+def normalize_lyrics_timing_method(value):
+    return value if value in LYRICS_TIMING_METHODS else DEFAULT_LYRICS_TIMING_METHOD
+
+
+def normalize_lyrics_timing_source(value):
+    return value if value in LYRICS_TIMING_SOURCES else DEFAULT_LYRICS_TIMING_SOURCE
+
 
 def clean_metadata_text(text):
     text = re.sub(
@@ -28,25 +42,23 @@ def clean_metadata_text(text):
     return " ".join(text.split()).strip(" -|")
 
 
-def youtube_music_metadata(info):
-    title = clean_metadata_text(info.get("track") or info.get("alt_title") or "")
-    artist = clean_metadata_text(info.get("artist") or info.get("creator") or "")
-    video_title = clean_metadata_text(info.get("title") or "")
-    uploader = clean_metadata_text(info.get("uploader") or info.get("channel") or "")
-    uploader = re.sub(r"\s+-\s+Topic$", "", uploader, flags=re.IGNORECASE)
-    uploader = re.sub(r"VEVO$", "", uploader, flags=re.IGNORECASE).strip()
-
-    if not title and " - " in video_title:
-        inferred_artist, inferred_title = video_title.split(" - ", 1)
-        title = clean_metadata_text(inferred_title)
-        artist = artist or clean_metadata_text(inferred_artist)
-    title = title or video_title
-    artist = artist or uploader
+def parse_duration(value):
     try:
-        duration = float(info.get("duration")) if info.get("duration") is not None else None
+        return float(value) if value is not None else None
     except (TypeError, ValueError):
-        duration = None
-    return {"title": title, "artist": artist, "duration": duration}
+        return None
+
+
+def song_metadata_from_title(title, duration=None):
+    video_title = clean_metadata_text(re.sub(
+        r"\s*-\s*YouTube\s*$", "", str(title or ""), flags=re.IGNORECASE,
+    ))
+    artist = ""
+    if " - " in video_title:
+        inferred_artist, inferred_title = video_title.split(" - ", 1)
+        artist = clean_metadata_text(inferred_artist)
+        video_title = clean_metadata_text(inferred_title)
+    return {"title": video_title, "artist": artist, "duration": parse_duration(duration)}
 
 
 def metadata_similarity(left, right):
@@ -77,6 +89,7 @@ def lrclib_candidate_score(candidate, metadata):
 
 
 def parse_lrc_segments(synced_lyrics, duration=None):
+    duration_value = parse_duration(duration)
     entries = []
     for raw_line in (synced_lyrics or "").splitlines():
         timestamps = LRC_TIMESTAMP_RE.findall(raw_line)
@@ -94,37 +107,60 @@ def parse_lrc_segments(synced_lyrics, duration=None):
         next_start = next((item[0] for item in entries[index + 1:] if item[0] > start), None)
         if next_start is not None:
             end = next_start
-        elif duration and float(duration) > start:
-            end = min(float(duration), start + 8)
+        elif duration_value and duration_value > start:
+            end = min(duration_value, start + 8)
         else:
             end = start + 4
         end = max(start + 0.05, end)
-        word_texts = split_words(text)
-        step = (end - start) / max(1, len(word_texts))
-        words = [{
-            "id": f"lrclib-{len(segments)}-{word_index}",
-            "text": word_text,
-            "start_time": round(start + step * word_index, 3),
-            "end_time": round(start + step * (word_index + 1), 3),
-        } for word_index, word_text in enumerate(word_texts)]
-        if words:
-            segments.append({
-                "id": f"lrclib-segment-{len(segments)}",
-                "text": text,
-                "start_time": words[0]["start_time"],
-                "end_time": words[-1]["end_time"],
-                "words": words,
-            })
+        segments.append({
+            "id": f"lrclib-segment-{len(segments)}",
+            "text": text,
+            "start_time": round(start, 3),
+            "end_time": round(end, 3),
+            "words": [],
+        })
     return segments
+
+
+def line_only_lyrics(payload):
+    if not isinstance(payload, dict):
+        return payload
+    result = dict(payload)
+    result["segments"] = [
+        {**segment, "words": []}
+        for segment in (payload.get("segments") or [])
+        if isinstance(segment, dict)
+    ]
+    return result
+
+
+def normalize_cached_lyrics(payload):
+    if not isinstance(payload, dict):
+        return payload
+    source = payload.get("source") or ""
+    timing_version = payload.get("timingVersion")
+    if source == "lrclib":
+        return line_only_lyrics(payload)
+    if "local-silero-vad" in source:
+        return line_only_lyrics(payload)
+    if "local-ctc" in source and timing_version != LYRICS_TIMING_VERSION:
+        return line_only_lyrics(payload)
+    return payload
 
 
 def fetch_lrclib_lyrics(info, output_dir):
     cache_path = output_dir / "lrclib_lyrics.json"
     cached = read_json_cache(cache_path)
     if cached and cached.get("source") == "lrclib" and cached.get("text"):
-        return cached
+        normalized = normalize_cached_lyrics(cached)
+        if normalized != cached:
+            write_json_cache(cache_path, normalized)
+        return normalized
 
-    metadata = youtube_music_metadata(info)
+    if isinstance(info, dict):
+        metadata = song_metadata_from_title(info.get("title"), info.get("duration"))
+    else:
+        metadata = song_metadata_from_title(info)
     if not metadata["title"]:
         return {"text": "", "segments": [], "source": "none", "message": "Could not identify the song for LRCLIB."}
     params = {"track_name": metadata["title"]}
@@ -172,69 +208,72 @@ def fetch_lrclib_lyrics(info, output_dir):
     return result
 
 
-def interpolate_word_timing(index, mapped, reference_words):
-    before_item = next(((position, mapped[position]) for position in range(index - 1, -1, -1) if position in mapped), None)
-    after_item = next(((position, mapped[position]) for position in range(index + 1, max(mapped.keys(), default=-1) + 1) if position in mapped), None)
-    before = before_item[1] if before_item else None
-    after = after_item[1] if after_item else None
-    if before and after:
-        slots = after_item[0] - before_item[0]
-        available = after["start_time"] - before["end_time"]
-        if available <= 0.05:
-            boundary = (before["end_time"] + after["start_time"]) / 2
-            return max(0, boundary - 0.06), boundary + 0.06
-        step = available / slots
-        start = before["end_time"] + step * (index - before_item[0] - 1)
-        return start, start + step
-    if before:
-        start = before["end_time"] + 0.3 * (index - before_item[0] - 1)
-        return start, start + 0.3
-    if after:
-        end = after["start_time"] - 0.3 * (after_item[0] - index - 1)
-        return max(0, end - 0.3), end
-    if reference_words:
-        return reference_words[0]["start_time"], reference_words[-1]["end_time"]
-    return index * 0.4, (index + 1) * 0.4
-
-
-def align_edited_lyrics(text, reference_segments):
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    edited_words = [word for line in lines for word in split_words(line)]
-    reference_words = [word for segment in reference_segments for word in segment.get("words", [])]
-    matcher = SequenceMatcher(
-        None,
-        [normalize_word(word.get("text", "")) for word in reference_words],
-        [normalize_word(word) for word in edited_words],
-        autojunk=False,
-    )
-    mapped = {}
-    for block in matcher.get_matching_blocks():
-        for offset in range(block.size):
-            mapped[block.b + offset] = reference_words[block.a + offset]
-
-    timed_words = []
-    for index, word_text in enumerate(edited_words):
-        timing = mapped.get(index)
-        if timing:
-            start, end = timing["start_time"], timing["end_time"]
+def normalize_vad_windows(speech_timestamps, merge_gap=0.75):
+    windows = []
+    for item in speech_timestamps or []:
+        try:
+            start = float(item.get("start"))
+            end = float(item.get("end"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if end > start:
+            windows.append({"start": max(0.0, start), "end": end})
+    windows.sort(key=lambda window: (window["start"], window["end"]))
+    merged = []
+    for window in windows:
+        if not merged or window["start"] - merged[-1]["end"] > merge_gap:
+            merged.append(dict(window))
         else:
-            start, end = interpolate_word_timing(index, mapped, reference_words)
-        timed_words.append({
-            "id": f"edited-word-{index}", "text": word_text,
-            "start_time": round(float(start), 3), "end_time": round(float(end), 3),
-        })
+            merged[-1]["end"] = max(merged[-1]["end"], window["end"])
+    return merged
 
+
+def active_offset_to_time(offset, windows):
+    remaining = max(0.0, float(offset))
+    for window in windows:
+        duration = max(0.0, window["end"] - window["start"])
+        if remaining <= duration:
+            return window["start"] + remaining
+        remaining -= duration
+    return windows[-1]["end"]
+
+
+def build_silero_vad_segments(lyrics_text, speech_timestamps):
+    line_specs = []
+    total_weight = 0
+    for raw_line in (lyrics_text or "").splitlines():
+        text = raw_line.strip()
+        words = split_words(text)
+        if not words:
+            continue
+        weight = sum(max(1, len(word.strip())) for word in words)
+        line_specs.append({"text": text, "weight": weight})
+        total_weight += weight
+    if not line_specs:
+        raise RuntimeError("lyrics text does not contain any timing words")
+
+    windows = normalize_vad_windows(speech_timestamps)
+    if not windows:
+        raise RuntimeError("Silero VAD did not detect vocal activity in the stem.")
+    total_active_duration = sum(window["end"] - window["start"] for window in windows)
+    if total_active_duration <= 0:
+        raise RuntimeError("Silero VAD returned unusable vocal activity timings.")
+
+    cursor_weight = 0
     segments = []
-    cursor = 0
-    for line_index, line in enumerate(lines):
-        count = len(split_words(line))
-        words = timed_words[cursor:cursor + count]
-        cursor += count
-        if words:
-            segments.append({
-                "id": f"edited-segment-{line_index}", "text": line, "words": words,
-                "start_time": words[0]["start_time"], "end_time": words[-1]["end_time"],
-            })
+    for line_index, spec in enumerate(line_specs):
+        start_offset = total_active_duration * cursor_weight / total_weight
+        cursor_weight += spec["weight"]
+        end_offset = total_active_duration * cursor_weight / total_weight
+        start_time = active_offset_to_time(start_offset, windows)
+        end_time = active_offset_to_time(end_offset, windows)
+        segments.append({
+            "id": f"silero-vad-segment-{line_index}",
+            "text": spec["text"],
+            "words": [],
+            "start_time": round(start_time, 3),
+            "end_time": round(max(start_time + 0.02, end_time), 3),
+        })
     return segments
 
 
@@ -243,7 +282,33 @@ def lyrics_runner_path():
     return root / ".venv-roformer" / "Scripts" / "python.exe", root / "host" / "lyrics_runner.py"
 
 
-def transcribe_lyrics(job_id, vocals_path):
+def silero_vad_runner_path():
+    root = Path(__file__).resolve().parents[2]
+    return root / ".venv-roformer" / "Scripts" / "python.exe", root / "host" / "silero_vad_runner.py"
+
+
+def parse_runner_json(job_id, stdout, label):
+    try:
+        return json.loads(stdout)
+    except json.JSONDecodeError:
+        for line in reversed(stdout.splitlines()):
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                LOGGER.warning("job=%s %s prefixed its JSON output", job_id, label)
+                return payload
+        LOGGER.error(
+            "job=%s %s returned invalid JSON stdout=%r",
+            job_id,
+            label,
+            stdout[:1000],
+        )
+        raise RuntimeError("Lyrics extraction returned an invalid result.")
+
+
+def align_lyrics(job_id, vocals_path, lyrics_text):
     python, runner = lyrics_runner_path()
     if not python.exists() or not runner.exists():
         raise FileNotFoundError(
@@ -251,13 +316,18 @@ def transcribe_lyrics(job_id, vocals_path):
         )
     if not is_complete_file(vocals_path):
         raise FileNotFoundError("The vocals stem is missing or empty.")
-    send_job(job_id, "status", "Finding word timings in the vocals...", phase="lyrics")
-    LOGGER.info("job=%s starting lyric transcription", job_id)
+    lyrics_text = (lyrics_text or "").strip()
+    if not lyrics_text:
+        raise ValueError("Enter lyrics before extracting lyric timings.")
+    send_job(job_id, "status", "Aligning provided lyrics to the vocals...", phase="lyrics")
+    LOGGER.info("job=%s starting CTC lyric alignment", job_id)
     try:
         result = subprocess.run(
-            [str(python), str(runner), str(vocals_path)], capture_output=True, text=True,
+            [str(python), str(runner), str(vocals_path)],
+            input=lyrics_text,
+            capture_output=True,
+            text=True,
             encoding="utf-8", errors="replace", timeout=LYRICS_TIMEOUT_SECONDS,
-            stdin=subprocess.DEVNULL,
             creationflags=subprocess_creationflags(),
         )
     except subprocess.TimeoutExpired as exc:
@@ -266,49 +336,83 @@ def transcribe_lyrics(job_id, vocals_path):
         ) from exc
     except OSError as exc:
         raise RuntimeError(f"Could not start lyrics extraction: {exc}") from exc
-    LOGGER.info("job=%s lyric transcription exited code=%s", job_id, result.returncode)
+    LOGGER.info("job=%s CTC lyric alignment exited code=%s", job_id, result.returncode)
     if result.stderr.strip():
-        LOGGER.info("job=%s lyric transcription output: %s", job_id, result.stderr.strip())
+        LOGGER.info("job=%s CTC lyric alignment output: %s", job_id, result.stderr.strip())
     if result.returncode != 0:
         detail = next(
             (line.strip() for line in reversed(result.stderr.splitlines()) if line.strip()),
             "",
         )
         raise RuntimeError(detail or f"Lyrics extraction exited with code {result.returncode}.")
-    try:
-        payload = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        # Older/cached runners or third-party code may still prefix stdout.
-        # Accept the final JSON line, but retain the full diagnostic excerpt.
-        for line in reversed(result.stdout.splitlines()):
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                LOGGER.warning("job=%s lyric transcription prefixed its JSON output", job_id)
-                break
-        else:
-            LOGGER.error(
-                "job=%s lyric transcription returned invalid JSON stdout=%r",
-                job_id,
-                result.stdout[:1000],
-            )
-            raise RuntimeError("Lyrics extraction returned an invalid result.")
+    payload = parse_runner_json(job_id, result.stdout, "CTC lyric alignment")
     segments = payload.get("segments") if isinstance(payload, dict) else None
     if not isinstance(segments, list):
         raise RuntimeError("Lyrics extraction returned an invalid segment list.")
     if not segments:
-        raise RuntimeError("Whisper found no words in the vocals stem.")
+        raise RuntimeError("CTC forced alignment found no aligned lyric words.")
     return segments
 
 
-def prepare_lyrics(job_id, output_dir, vocals_path, requested_text, youtube_lyrics, force=False):
+def align_lyrics_with_silero_vad(job_id, vocals_path, lyrics_text):
+    python, runner = silero_vad_runner_path()
+    if not python.exists() or not runner.exists():
+        raise FileNotFoundError(
+            "Silero VAD runtime is not installed. Run setup-roformer.ps1."
+        )
+    if not is_complete_file(vocals_path):
+        raise FileNotFoundError("The vocals stem is missing or empty.")
+    lyrics_text = (lyrics_text or "").strip()
+    if not lyrics_text:
+        raise ValueError("Enter lyrics before extracting lyric timings.")
+    send_job(job_id, "status", "Detecting vocal activity with Silero VAD...", phase="lyrics")
+    LOGGER.info("job=%s starting Silero VAD lyric timing", job_id)
+    try:
+        result = subprocess.run(
+            [str(python), str(runner), str(vocals_path)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            encoding="utf-8", errors="replace", timeout=LYRICS_TIMEOUT_SECONDS,
+            creationflags=subprocess_creationflags(),
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError(
+            f"Silero VAD timing timed out after {LYRICS_TIMEOUT_SECONDS // 60} minutes."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(f"Could not start Silero VAD timing: {exc}") from exc
+    LOGGER.info("job=%s Silero VAD exited code=%s", job_id, result.returncode)
+    if result.stderr.strip():
+        LOGGER.info("job=%s Silero VAD output: %s", job_id, result.stderr.strip())
+    if result.returncode != 0:
+        detail = next(
+            (line.strip() for line in reversed(result.stderr.splitlines()) if line.strip()),
+            "",
+        )
+        raise RuntimeError(detail or f"Silero VAD exited with code {result.returncode}.")
+    payload = parse_runner_json(job_id, result.stdout, "Silero VAD")
+    speech_timestamps = payload.get("speech_timestamps") if isinstance(payload, dict) else None
+    if not isinstance(speech_timestamps, list):
+        raise RuntimeError("Silero VAD returned an invalid timestamp list.")
+    return build_silero_vad_segments(lyrics_text, speech_timestamps)
+
+
+def prepare_lyrics(
+    job_id, output_dir, vocals_path, requested_text, provider_lyrics, force=False,
+    timing_method=DEFAULT_LYRICS_TIMING_METHOD,
+    timing_source=DEFAULT_LYRICS_TIMING_SOURCE,
+):
     requested_text = (requested_text or "").strip()
-    youtube_text = ((youtube_lyrics or {}).get("text") or "").strip()
-    final_text = requested_text or youtube_text
+    provider_text = ((provider_lyrics or {}).get("text") or "").strip()
+    final_text = requested_text or provider_text
     if not final_text:
         return {"text": "", "segments": [], "source": "none"}
+    timing_method = normalize_lyrics_timing_method(timing_method)
+    timing_source = normalize_lyrics_timing_source(timing_source)
+    local_source = "local-silero-vad" if timing_method == "silero-vad" else "local-ctc"
+    if timing_source == "original":
+        local_source = f"{local_source}-original"
 
     cached_path = output_dir / "lyrics.json"
     cached = read_json_cache(cached_path) if not force else None
@@ -316,21 +420,29 @@ def prepare_lyrics(job_id, output_dir, vocals_path, requested_text, youtube_lyri
         cache_matches_text = (
             requested_text and cached.get("textHash") == hashlib.sha256(requested_text.encode("utf-8")).hexdigest()
         ) or (not requested_text and cached.get("segments"))
-        if cached.get("timingVersion") == LYRICS_TIMING_VERSION and cache_matches_text:
-            return {key: cached.get(key) for key in ("text", "segments", "source")}
-    provider_segments = (youtube_lyrics or {}).get("segments") or []
-    provider_source = (youtube_lyrics or {}).get("source") or "none"
-
-    # YouTube JSON3 is excellent as a text source but automatic captions often
-    # expose rolling cue windows rather than true word ends. Karaoke-gen uses a
-    # word-timestamped vocal transcription as the timing authority, then maps
-    # corrected/reference lyric text onto those timestamps. Do the same here.
-    whisper_segments = transcribe_lyrics(job_id, vocals_path)
-    reference_segments = whisper_segments
-    source = f"{provider_source}+local-whisper" if provider_source != "none" else "local-whisper"
-
-    segments = align_edited_lyrics(final_text, reference_segments) if final_text else []
-    result = {"text": final_text, "segments": segments, "source": source}
+        cached_method = cached.get("timingMethod")
+        if not cached_method and local_source in (cached.get("source") or ""):
+            cached_method = timing_method
+        if (
+            cached.get("timingVersion") == LYRICS_TIMING_VERSION
+            and cache_matches_text
+            and cached_method == timing_method
+            and (cached.get("timingSource") or DEFAULT_LYRICS_TIMING_SOURCE) == timing_source
+        ):
+            return {key: cached.get(key) for key in ("text", "segments", "source", "timingMethod", "timingSource")}
+    provider_source = (provider_lyrics or {}).get("source") or "none"
+    source = f"{provider_source}+{local_source}" if provider_source != "none" else local_source
+    if timing_method == "silero-vad":
+        segments = align_lyrics_with_silero_vad(job_id, vocals_path, final_text)
+    else:
+        segments = align_lyrics(job_id, vocals_path, final_text)
+    result = {
+        "text": final_text,
+        "segments": segments,
+        "source": source,
+        "timingMethod": timing_method,
+        "timingSource": timing_source,
+    }
     digest = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
     write_json_cache(cached_path, {
         **result, "textHash": digest, "timingVersion": LYRICS_TIMING_VERSION

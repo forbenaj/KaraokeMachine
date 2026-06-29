@@ -6,6 +6,12 @@ const downloadQueue = [];
 let activeDownloadJobId = null;
 const deferredTimingPosts = new Map();
 const DOWNLOAD_TERMINAL_TYPES = new Set(["complete", "error"]);
+const DEFAULT_TIMING_METHOD = "ctc";
+const TIMING_METHODS = new Set([DEFAULT_TIMING_METHOD, "silero-vad"]);
+const DEFAULT_TIMING_SOURCE = "original";
+const TIMING_SOURCES = new Set([DEFAULT_TIMING_SOURCE, "vocal-stem"]);
+const DEFAULT_TIMING_SCHEDULE = "stems-first";
+const TIMING_SCHEDULES = new Set([DEFAULT_TIMING_SCHEDULE, "lyrics-first", "parallel"]);
 const jobTimeouts = new Map();
 const JOB_TIMEOUT_MS = {
   cache: 2 * 60 * 1000,
@@ -47,6 +53,18 @@ function videoIdFromUrl(rawUrl) {
   } catch (_error) {
     return "";
   }
+}
+
+function normalizeTimingMethod(value) {
+  return TIMING_METHODS.has(value) ? value : DEFAULT_TIMING_METHOD;
+}
+
+function normalizeTimingSource(value) {
+  return TIMING_SOURCES.has(value) ? value : DEFAULT_TIMING_SOURCE;
+}
+
+function normalizeTimingSchedule(value) {
+  return TIMING_SCHEDULES.has(value) ? value : DEFAULT_TIMING_SCHEDULE;
 }
 
 function sendToTab(tabId, payload) {
@@ -226,7 +244,8 @@ function postDownloadToHost(job) {
         jobId: job.jobId,
         url: job.url,
         title: job.title || "YouTube song",
-        cookies
+        cookies,
+        lyricsTiming: job.lyricsTiming || null
       });
       job.hostPosted = true;
       flushDeferredTimings(job.videoId);
@@ -326,6 +345,25 @@ function collectYouTubeCookies(callback) {
 }
 
 function karaokize(message, tabId, sendResponse) {
+  const rawLyricsTiming = message.lyricsTiming && typeof message.lyricsTiming === "object"
+    ? message.lyricsTiming
+    : null;
+  const lyricsTiming = rawLyricsTiming
+    && typeof rawLyricsTiming.jobId === "string"
+    && rawLyricsTiming.jobId
+    && !jobs.has(rawLyricsTiming.jobId)
+    && normalizeTimingSource(rawLyricsTiming.timingSource) === "original"
+    && ((rawLyricsTiming.lyricsText || "").trim() || (rawLyricsTiming.title || "").trim())
+      ? {
+          jobId: rawLyricsTiming.jobId,
+          lyricsText: rawLyricsTiming.lyricsText || "",
+          timingMethod: normalizeTimingMethod(rawLyricsTiming.timingMethod),
+          timingSource: "original",
+          timingSchedule: normalizeTimingSchedule(rawLyricsTiming.timingSchedule),
+          title: rawLyricsTiming.title || "",
+          duration: Number.isFinite(rawLyricsTiming.duration) ? rawLyricsTiming.duration : null,
+        }
+      : null;
   const job = {
     kind: "download",
     jobId: message.jobId,
@@ -340,9 +378,19 @@ function karaokize(message, tabId, sendResponse) {
     createdAt: Date.now(),
     startedAt: 0,
     hostPosted: false,
+    lyricsTiming,
   };
 
   jobs.set(job.jobId, job);
+  if (lyricsTiming) {
+    jobs.set(lyricsTiming.jobId, {
+      tabId,
+      kind: "lyricsTimings",
+      videoId: job.videoId,
+      parentJobId: job.jobId,
+    });
+    armJobTimeout(lyricsTiming.jobId, "lyricsTimings");
+  }
   downloadQueue.push(job);
   sendToTab(tabId, {
     type: "dkaraoke-status",
@@ -368,21 +416,20 @@ function searchLrclib(message, tabId, sendResponse) {
   }
   jobs.set(message.jobId, { tabId, kind: "lyricsSearch" });
   armJobTimeout(message.jobId, "lyricsSearch");
-  collectYouTubeCookies((cookies) => {
-    try {
-      port.postMessage({
-        action: "searchLrclib",
-        jobId: message.jobId,
-        url: message.url,
-        cookies
-      });
-      sendResponse({ ok: true });
-    } catch (error) {
-      jobs.delete(message.jobId);
-      clearJobTimeout(message.jobId);
-      sendResponse({ ok: false, error: String(error) });
-    }
-  });
+  try {
+    port.postMessage({
+      action: "searchLrclib",
+      jobId: message.jobId,
+      url: message.url,
+      title: message.title || "",
+      duration: Number.isFinite(message.duration) ? message.duration : null
+    });
+    sendResponse({ ok: true });
+  } catch (error) {
+    jobs.delete(message.jobId);
+    clearJobTimeout(message.jobId);
+    sendResponse({ ok: false, error: String(error) });
+  }
 }
 
 function extractLyricsTimings(message, tabId, sendResponse) {
@@ -394,30 +441,35 @@ function extractLyricsTimings(message, tabId, sendResponse) {
     return;
   }
   const videoId = videoIdFromUrl(message.url);
+  const timingSource = normalizeTimingSource(message.timingSource);
   jobs.set(message.jobId, { tabId, kind: "lyricsTimings", videoId });
   armJobTimeout(message.jobId, "lyricsTimings");
   const hostMessage = {
     action: "extractLyricsTimings",
     jobId: message.jobId,
     url: message.url,
-    lyricsText: message.lyricsText || ""
+    lyricsText: message.lyricsText || "",
+    timingMethod: normalizeTimingMethod(message.timingMethod),
+    timingSource
   };
   const matchingDownload = [...jobs.values()].find((job) =>
     job.kind === "download" && job.videoId === videoId
   );
-  if (matchingDownload && !matchingDownload.hostPosted) {
+  if (timingSource === "vocal-stem" && matchingDownload && !matchingDownload.hostPosted) {
     deferredTimingPosts.set(message.jobId, { videoId, message: hostMessage });
     sendResponse({ ok: true, waitingForKaraokize: true });
     return;
   }
-  try {
-    port.postMessage(hostMessage);
-    sendResponse({ ok: true });
-  } catch (error) {
-    jobs.delete(message.jobId);
-    clearJobTimeout(message.jobId);
-    sendResponse({ ok: false, error: String(error) });
-  }
+  collectYouTubeCookies((cookies) => {
+    try {
+      port.postMessage({ ...hostMessage, cookies });
+      sendResponse({ ok: true });
+    } catch (error) {
+      jobs.delete(message.jobId);
+      clearJobTimeout(message.jobId);
+      sendResponse({ ok: false, error: String(error) });
+    }
+  });
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {

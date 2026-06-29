@@ -1,6 +1,7 @@
 function startKaraokize() {
-  if (processing) return;
+  if (processing || !cacheCheckComplete || !karaokizeAvailable) return;
 
+  const lyricsTiming = prepareKaraokizeLyricsTiming();
   const jobId = crypto.randomUUID();
   activeJobId = jobId;
   activeJobStemsReady = false;
@@ -8,22 +9,27 @@ function startKaraokize() {
   setProcessing(true);
   setProcessStatus("Connecting to the downloader...", "busy");
 
-  const title = document.querySelector("ytd-watch-metadata h1")?.textContent?.trim()
-    || document.title.replace(/\s*-\s*YouTube\s*$/, "");
-
   chrome.runtime.sendMessage({
     type: "dkaraoke-karaokize",
     jobId,
     url: location.href,
-    title
+    title: currentSongTitle(),
+    lyricsTiming
   }, (response) => {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (activeJobId !== jobId) return;
     if (!response?.ok || error) {
       clearMonitorJob(jobId);
       activeJobId = null;
+      if (lyricsTiming && timingsJobId === lyricsTiming.jobId) {
+        timingsProcessing = false;
+        timingsJobId = null;
+        updateLyricsProcessButtons();
+        setLyricsStatus("Could not start lyric timing because Karaokize failed to start.", "error");
+      }
       setProcessing(false);
       setProcessStatus(error || "Could not start the downloader.", "error");
     }
   });
+  if (!lyricsTiming) startLyricsExtractionPipeline();
 }

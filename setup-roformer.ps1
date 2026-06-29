@@ -39,9 +39,10 @@ git -C $repo checkout --detach $commit
 & $pythonPath -m pip install --upgrade pip setuptools wheel
 $torchIndex = "https://download.pytorch.org/whl/$TorchBuild"
 & $pythonPath -m pip install "torch==$TorchVersion" --index-url $torchIndex
+& $pythonPath -m pip install "torchaudio==$TorchVersion" --index-url $torchIndex
 & $pythonPath -m pip install numpy SoundFile PyYAML ml_collections "omegaconf==2.2.3" `
-  "beartype==0.14.1" "rotary_embedding_torch==0.3.5" "einops==0.6.1" librosa
-& $pythonPath -m pip install whisper-timestamped
+  "beartype==0.14.1" "rotary_embedding_torch==0.3.5" "einops==0.6.1" librosa `
+  "silero-vad"
 
 $download = $true
 if (Test-Path $checkpoint) {

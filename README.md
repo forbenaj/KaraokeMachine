@@ -1,12 +1,12 @@
 # DKaraoKe for YouTube
 
-DKaraoKe is a Windows-first Chrome MV3 extension with a local Python backend. It adds synchronized instrumental/vocal playback and word-timed lyrics to YouTube while keeping YouTube's video as the master clock.
+DKaraoKe is a Windows-first Chrome MV3 extension with a local Python backend. It adds synchronized instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
 
 ## Install
 
 `install.ps1` creates `.venv-tools`, installs or updates `yt-dlp` with its YouTube JavaScript solver, validates Node.js and FFmpeg, and registers the native host for the extension. Missing Node.js or FFmpeg dependencies are installed with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
 
-From this directory, install the backend and the RoFormer/Whisper runtime:
+From this directory, install the backend and the RoFormer/CTC-alignment runtime:
 
 ```powershell
 .\install.ps1
@@ -14,7 +14,7 @@ From this directory, install the backend and the RoFormer/Whisper runtime:
 # or: .\setup-roformer.ps1 -TorchBuild cu124
 ```
 
-CUDA builds `cu121` and `cu124` are supported. The setup creates `.venv-roformer`, checks out the pinned RoFormer source, installs `whisper-timestamped`, and downloads a verified 913 MB separation checkpoint. Interrupted checkpoint downloads resume when the script is rerun.
+CUDA builds `cu121` and `cu124` are supported. The setup creates `.venv-roformer`, checks out the pinned RoFormer source, installs matching `torch` and `torchaudio` builds for CTC forced alignment, installs Silero VAD timing support, and downloads a verified 913 MB separation checkpoint. Interrupted checkpoint downloads resume when the script is rerun.
 
 Then load the extension:
 
@@ -31,17 +31,21 @@ Press **K** beside the YouTube logo to open or close the karaoke workspace. On w
 
 Whenever a song opens, DKaraoKe checks local results automatically:
 
-1. Cached Whisper lyrics and word timing are loaded first.
-2. Cached LRCLIB lyrics and provisional timing are used if Whisper results do not exist.
+1. Cached local CTC-aligned lyrics and timing are loaded first.
+2. Cached LRCLIB lyrics and line timing are used if local aligned results do not exist.
 3. If both stems already exist, playback immediately switches to the instrumental stem.
-4. **Karaokize!** is enabled only while stems are missing.
+4. The **Monitor** shows a red jagged star and **Press me!** while stems are missing.
 
-Pressing **Karaokize!** prepares only the audio stems. Lyrics are separate, explicit processes in the lyrics editor: search LRCLIB for text, then extract refined word timings from the prepared vocal stem.
+Pressing the **Monitor** prepares the audio stems and starts the lyrics pipeline. DKaraoKe searches LRCLIB when the editor has no lyrics yet, then extracts refined timings using the configured timing source and Press me order.
 
 The audio and lyrics pipelines are independently scheduled. LRCLIB search can
 run while audio is downloading or separating. If **Extract timings** is pressed
-while Karaokize is still preparing the same song, the timing job waits for the
-vocal stem and starts automatically when it becomes available.
+while Karaokize is still preparing the same song and the timing source is the
+vocal stem, the timing job waits for the stem and starts automatically when it
+becomes available. Original audio is the default timing source and can start
+without depending on stem extraction. To avoid GPU/CPU contention, Press me
+uses **Stems first** by default; **Lyrics first** and **Run together** are
+available in settings.
 
 ### Playback Controls
 
@@ -49,18 +53,18 @@ The left section contains a playful visual monitor and two audio toggle buttons:
 
 - **Instrumental:** play the synchronized instrumental stem.
 - **Vocals:** play the synchronized vocal stem.
-- **Settings:** adjust latency compensation, lyric timing offset, and whether audio/lyrics toggles persist across songs or reset to chosen defaults.
+- **Settings:** adjust latency compensation, lyric timing offset, the timing extraction method/source, the Press me ordering for original-audio timing, and whether audio/lyrics toggles persist across songs or reset to chosen defaults.
 
-If a song is already processing, later **Karaokize!** requests are queued in the background. A floating queue button appears in the lower-left corner while work is active; open it to see the current song and waiting songs.
+If a song is already processing, later **Monitor** clicks are queued in the background. A floating queue button appears in the lower-left corner while work is active; open it to see the current song and waiting songs.
 
 ### Lyrics Editor
 
 The right section contains the lyrics editor. Its compact control section sits below the editor:
 
 - **Lyrics:** show or hide synchronized lyrics over the video.
-- **Lyrics style:** choose the original arcade treatment or a simpler subtitle treatment.
-- **Search LRCLIB:** find lyrics and provisional synchronized timing for the current song.
-- **Extract timings:** use Whisper on the existing vocal stem to build refined word timing for the current editor text.
+- **Lyrics style:** choose Classic, Arcade, or Simple. Classic is the default and shows a three-line window with the current line centered and scrolling upward on line changes.
+- **Search LRCLIB:** find lyrics and synchronized line timing for the current song.
+- **Extract timings:** use the selected timing extraction method and audio source to time the current editor text. Original audio is the default and downloads only the source audio needed for timing. Vocal stem mode uses the prepared vocals stem. CTC forced alignment can produce word timing when the aligner exposes character spans; otherwise timed lines are shown without synthetic word timing. Silero VAD produces line-level timing.
 
 Lyrics search, extraction, and timing messages appear in the lyrics header; the left monitor remains dedicated to audio preparation and playback.
 
@@ -91,10 +95,10 @@ state:
 - Both stems present: serve them without downloading or separating again.
 - Legacy `audio.mp3` present but stems missing: use it once for separation, then delete it.
 - Stems missing: download best audio with `yt-dlp` without an intermediate MP3 conversion, separate it, then delete the temporary source.
-- LRCLIB timing present: display it immediately.
-- Whisper timing present: use it as the timing authority.
+- LRCLIB line timing present: display it immediately.
+- Local CTC, Silero VAD, or legacy Whisper timing present: use it as the timing authority.
 
-The default Whisper model is `small` and downloads on its first timing run. Set `DKARAOKE_WHISPER_MODEL` before starting Chrome to select another model.
+The first CTC timing extraction downloads TorchAudio's MMS forced-alignment checkpoint into the standard Torch cache for the active user profile. Silero VAD is installed by `setup-roformer.ps1` and detects vocal activity locally.
 
 ## Local backend and privacy
 
@@ -102,7 +106,7 @@ The extension communicates with the registered `com.dkaraoke.downloader` native 
 
 Downloads are attempted anonymously first. If YouTube requires authentication, relevant YouTube/Google cookies are written to a temporary Netscape-format file for that attempt and deleted afterward. Cookies, native-message payloads, and local audio-server tokens are not written to the log.
 
-LRCLIB receives the detected song title, artist, and duration for matching. Audio processing and Whisper transcription run locally.
+LRCLIB receives the visible YouTube page title, a parsed artist when the title uses an `Artist - Song` pattern, and the local player duration for matching. The lyrics pipeline does not inspect YouTube metadata through `yt-dlp`. Audio processing, CTC forced alignment, and Silero VAD run locally.
 
 ## Troubleshooting
 
@@ -125,8 +129,8 @@ Common recovery steps:
 - **Native host unavailable:** rerun `.\install.ps1`, restart Chrome, and reload the extension.
 - **RoFormer is not installed:** rerun `.\setup-roformer.ps1`; checkpoint downloads resume automatically.
 - **FFmpeg not found:** ensure both `ffmpeg` and `ffprobe` are on `PATH`, then rerun `.\install.ps1`.
-- **A prepared song behaves incorrectly:** remove only that video's cache directory and press **Karaokize!** again.
-- **Timings cannot be extracted:** prepare the stems first; timing extraction requires an existing vocal stem.
+- **A prepared song behaves incorrectly:** remove only that video's cache directory and press the **Monitor** again.
+- **Timings cannot be extracted:** try the default original-audio source, or prepare stems first when using vocal-stem timing. If Silero VAD is unavailable, rerun `.\setup-roformer.ps1`.
 
 ## Architecture
 
@@ -137,7 +141,7 @@ YouTube
   background.js
     -> native messaging: com.dkaraoke.downloader
   host/dkaraoke_host.py
-    -> yt-dlp -> temporary source -> Mel-Band RoFormer -> Whisper
+    -> yt-dlp -> temporary source -> Mel-Band RoFormer -> CTC forced alignment
     -> LRCLIB lookup and per-video cache
     -> concurrent job dispatch; timing jobs may wait on same-video stems
     -> tokenized 127.0.0.1 stem server

@@ -4,6 +4,9 @@ function normalizeSettings(value = {}) {
     ...value,
     latencyMs: clampNumber(value.latencyMs, -1000, 1000, DEFAULT_SETTINGS.latencyMs),
     lyricsLatencyMs: clampNumber(value.lyricsLatencyMs, -1000, 1000, DEFAULT_SETTINGS.lyricsLatencyMs),
+    timingExtractionMethod: normalizeTimingMethod(value.timingExtractionMethod),
+    timingExtractionSource: normalizeTimingSource(value.timingExtractionSource),
+    timingPipelineSchedule: normalizeTimingSchedule(value.timingPipelineSchedule),
     defaultStateMode: value.defaultStateMode === "reset" ? "reset" : "keep",
     defaultInstrumental: value.defaultInstrumental !== false,
     defaultVocals: value.defaultVocals === true,
@@ -51,6 +54,9 @@ function updateSettingsModalControls() {
   if (!modal) return;
   const latency = modal.querySelector("#dkaraoke-setting-latency");
   const lyricsLatency = modal.querySelector("#dkaraoke-setting-lyrics-latency");
+  const timingMethod = modal.querySelector(`#${TIMING_METHOD_ID}`);
+  const timingSource = modal.querySelector(`#${TIMING_SOURCE_ID}`);
+  const timingSchedule = modal.querySelector(`#${TIMING_SCHEDULE_ID}`);
   const keep = modal.querySelector("#dkaraoke-default-keep");
   const reset = modal.querySelector("#dkaraoke-default-reset");
   const instrumental = modal.querySelector("#dkaraoke-default-instrumental");
@@ -58,6 +64,12 @@ function updateSettingsModalControls() {
   const lyrics = modal.querySelector("#dkaraoke-default-lyrics");
   if (latency) latency.value = String(settings.latencyMs);
   if (lyricsLatency) lyricsLatency.value = String(settings.lyricsLatencyMs);
+  if (timingMethod) timingMethod.value = settings.timingExtractionMethod;
+  if (timingSource) timingSource.value = settings.timingExtractionSource;
+  if (timingSchedule) {
+    timingSchedule.value = settings.timingPipelineSchedule;
+    timingSchedule.disabled = settings.timingExtractionSource !== "original";
+  }
   if (keep) keep.checked = settings.defaultStateMode === "keep";
   if (reset) reset.checked = settings.defaultStateMode === "reset";
   if (instrumental) instrumental.checked = settings.defaultInstrumental;
@@ -82,6 +94,25 @@ function makeSettingNumber(id, label, value, handler) {
   input.value = String(value);
   input.addEventListener("change", () => handler(clampNumber(input.value, -1000, 1000, value)));
   field.append(text, input);
+  return field;
+}
+
+function makeSettingSelect(id, label, options, value, normalize, handler) {
+  const field = document.createElement("label");
+  field.className = "dkaraoke-setting-field dkaraoke-setting-field-select";
+  const text = document.createElement("span");
+  text.textContent = label;
+  const select = document.createElement("select");
+  select.id = id;
+  for (const [optionValue, optionLabel] of options) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = optionLabel;
+    select.appendChild(option);
+  }
+  select.value = value;
+  select.addEventListener("change", () => handler(normalize(select.value)));
+  field.append(text, select);
   return field;
 }
 
@@ -121,8 +152,62 @@ function ensureSettingsModal() {
     })
   );
 
+  const timing = document.createElement("fieldset");
+  timing.className = "dkaraoke-settings-section";
+  const timingLegend = document.createElement("legend");
+  timingLegend.textContent = "Timing extraction";
+  timing.append(
+    timingLegend,
+    makeSettingSelect(
+      TIMING_METHOD_ID,
+      "Method",
+      [
+        ["ctc", "Current (CTC forced alignment)"],
+        ["silero-vad", "Silero VAD"],
+      ],
+      settings.timingExtractionMethod,
+      normalizeTimingMethod,
+      (value) => {
+        settings.timingExtractionMethod = value;
+        saveSettings();
+        updateSettingsModalControls();
+      },
+    ),
+    makeSettingSelect(
+      TIMING_SOURCE_ID,
+      "Audio source",
+      [
+        ["original", "Original audio"],
+        ["vocal-stem", "Vocal stem"],
+      ],
+      settings.timingExtractionSource,
+      normalizeTimingSource,
+      (value) => {
+        settings.timingExtractionSource = value;
+        saveSettings();
+        updateSettingsModalControls();
+      },
+    ),
+    makeSettingSelect(
+      TIMING_SCHEDULE_ID,
+      "Press me order",
+      [
+        ["stems-first", "Stems first"],
+        ["lyrics-first", "Lyrics first"],
+        ["parallel", "Run together"],
+      ],
+      settings.timingPipelineSchedule,
+      normalizeTimingSchedule,
+      (value) => {
+        settings.timingPipelineSchedule = value;
+        saveSettings();
+        updateSettingsModalControls();
+      },
+    )
+  );
+
   const defaults = document.createElement("fieldset");
-  defaults.className = "dkaraoke-settings-defaults";
+  defaults.className = "dkaraoke-settings-section dkaraoke-settings-defaults";
   const legend = document.createElement("legend");
   legend.textContent = "Default state";
   const keepLabel = document.createElement("label");
@@ -175,6 +260,7 @@ function ensureSettingsModal() {
   }
 
   defaults.append(legend, keepLabel, resetLabel, resetOptions);
+  body.appendChild(timing);
   body.appendChild(defaults);
   modal.append(header, body);
   modal.addEventListener("click", (event) => {

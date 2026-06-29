@@ -4,19 +4,20 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections import namedtuple
 from pathlib import Path
 from unittest.mock import patch
 
 from host import dkaraoke_host as host
+from host import lyrics_runner
 
 
 class LyricsMetadataTests(unittest.TestCase):
-    def test_extracts_artist_and_title_from_youtube_title(self):
-        metadata = host.youtube_music_metadata({
-            "title": "Coldplay - Yellow (Official Video)",
-            "uploader": "ColdplayVEVO",
-            "duration": 267,
-        })
+    def test_extracts_artist_and_title_from_page_title(self):
+        metadata = host.song_metadata_from_title(
+            "Coldplay - Yellow (Official Video)",
+            267,
+        )
 
         self.assertEqual(metadata, {
             "title": "Yellow",
@@ -24,48 +25,41 @@ class LyricsMetadataTests(unittest.TestCase):
             "duration": 267.0,
         })
 
-    def test_prefers_structured_track_metadata(self):
-        metadata = host.youtube_music_metadata({
-            "track": "Bizarre Love Triangle",
-            "artist": "New Order",
-            "title": "unhelpful upload title",
-            "duration": "262.5",
-        })
+    def test_removes_youtube_suffix_from_page_title(self):
+        metadata = host.song_metadata_from_title(
+            "New Order - Bizarre Love Triangle - YouTube",
+            "262.5",
+        )
 
         self.assertEqual(metadata["title"], "Bizarre Love Triangle")
         self.assertEqual(metadata["artist"], "New Order")
         self.assertEqual(metadata["duration"], 262.5)
 
 
-class YtdlpMetadataTests(unittest.TestCase):
-    def test_retries_once_after_metadata_timeout(self):
-        completed = host.subprocess.CompletedProcess(
-            args=["yt-dlp"],
-            returncode=0,
-            stdout='{"title":"Recovered"}',
-            stderr="",
-        )
-        with (
-            patch.object(host, "require_tools", return_value="yt-dlp"),
-            patch.object(host, "ytdlp_runtime_args", return_value=[]),
-            patch.object(
-                host.subprocess,
-                "run",
-                side_effect=[
-                    host.subprocess.TimeoutExpired(["yt-dlp"], host.YTDLP_METADATA_TIMEOUT_SECONDS),
-                    completed,
-                ],
-            ) as run,
-        ):
-            info = host.run_ytdlp_json("https://www.youtube.com/watch?v=abcdefghijk")
+class YoutubeHelperTests(unittest.TestCase):
+    def test_cookie_file_writer_has_uuid_dependency(self):
+        path = host.write_cookie_file([{
+            "domain": ".youtube.com",
+            "path": "/",
+            "secure": True,
+            "httpOnly": True,
+            "expirationDate": 1893456000,
+            "name": "SID",
+            "value": "secret",
+        }])
 
-        self.assertEqual(info["title"], "Recovered")
-        self.assertEqual(run.call_count, 2)
-        self.assertIn("--socket-timeout", run.call_args.args[0])
+        try:
+            self.assertIsNotNone(path)
+            text = Path(path).read_text(encoding="utf-8")
+            self.assertIn("# Netscape HTTP Cookie File", text)
+            self.assertIn("SID", text)
+        finally:
+            if path:
+                Path(path).unlink(missing_ok=True)
 
 
 class LrcParsingTests(unittest.TestCase):
-    def test_builds_line_segments_and_interpolated_words(self):
+    def test_builds_line_segments_without_fake_words(self):
         segments = host.parse_lrc_segments(
             "[00:10.00]Hello world\n[00:12.00]\n[00:14.00]Next line",
             duration=20,
@@ -74,8 +68,8 @@ class LrcParsingTests(unittest.TestCase):
         self.assertEqual(len(segments), 2)
         self.assertEqual(segments[0]["start_time"], 10.0)
         self.assertEqual(segments[0]["end_time"], 12.0)
-        self.assertEqual([word["text"] for word in segments[0]["words"]], ["Hello", "world"])
-        self.assertEqual(segments[0]["words"][0]["end_time"], 11.0)
+        self.assertEqual(segments[0]["text"], "Hello world")
+        self.assertEqual(segments[0]["words"], [])
         self.assertEqual(segments[1]["start_time"], 14.0)
 
     def test_rejects_unrelated_lrclib_candidate(self):
@@ -85,6 +79,55 @@ class LrcParsingTests(unittest.TestCase):
         )
 
         self.assertEqual(score, -1.0)
+
+    def test_silero_vad_segments_distribute_lines_over_vocal_activity(self):
+        segments = host.lyrics.build_silero_vad_segments(
+            "Hello world\nAgain",
+            [{"start": 1.0, "end": 3.0}],
+        )
+
+        self.assertEqual(len(segments), 2)
+        self.assertEqual(segments[0]["text"], "Hello world")
+        self.assertEqual(segments[0]["words"], [])
+        self.assertEqual(segments[0]["start_time"], 1.0)
+        self.assertEqual(segments[-1]["end_time"], 3.0)
+
+
+class CtcSegmentTests(unittest.TestCase):
+    def test_ctc_words_use_character_spans_when_available(self):
+        span = namedtuple("Span", "start end score")
+        segments = lyrics_runner.build_segments(
+            token_spans=[
+                [span(0, 5, 0.9)],
+                [
+                    span(10, 20, 0.91),
+                    span(20, 30, 0.92),
+                    span(40, 50, 0.93),
+                    span(50, 60, 0.94),
+                    span(60, 70, 0.95),
+                ],
+                [span(70, 80, 0.9)],
+            ],
+            line_specs=[{"text": "Hi all", "word_indices": [0, 1]}],
+            word_specs=[
+                {"text": "Hi", "normalized": "hi"},
+                {"text": "all", "normalized": "all"},
+            ],
+            alignment_entries=[
+                {"kind": "gap"},
+                {"kind": "line", "line_index": 0, "previous_gap": 0, "next_gap": 2},
+                {"kind": "gap"},
+            ],
+            waveform_frames=1000,
+            emission_frames=100,
+            sample_rate=1000,
+        )
+
+        self.assertEqual(segments[0]["start_time"], 0.05)
+        self.assertEqual(segments[0]["end_time"], 0.8)
+        self.assertEqual([word["text"] for word in segments[0]["words"]], ["Hi", "all"])
+        self.assertEqual(segments[0]["words"][0]["start_time"], 0.1)
+        self.assertEqual(segments[0]["words"][1]["end_time"], 0.7)
 
 
 class PipelineOrderingTests(unittest.TestCase):
@@ -126,7 +169,34 @@ class PipelineOrderingTests(unittest.TestCase):
         self.assertEqual(events, ["stems-ready", "complete"])
         prepare_lyrics.assert_not_called()
 
-    def test_cache_check_prefers_whisper_over_lrclib(self):
+    def test_lrclib_search_uses_provided_page_title(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "fetch_lrclib_lyrics", return_value={
+                    "text": "Yellow",
+                    "segments": [],
+                    "source": "lrclib",
+                    "message": "Loaded lyrics from LRCLIB.",
+                }) as fetch_lrclib_lyrics,
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.execute_message({
+                    "action": "searchLrclib",
+                    "jobId": "lyrics-job",
+                    "url": "https://www.youtube.com/watch?v=abcdefghijk",
+                    "title": "Coldplay - Yellow",
+                    "duration": 267,
+                })
+
+            fetch_lrclib_lyrics.assert_called_once_with(
+                {"title": "Coldplay - Yellow", "duration": 267},
+                output_dir,
+            )
+            self.assertEqual(send_job.call_args.args[1], "lyrics")
+
+    def test_cache_check_prefers_local_ctc_over_lrclib(self):
         with tempfile.TemporaryDirectory() as temporary:
             output_dir = Path(temporary)
             stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
@@ -134,8 +204,8 @@ class PipelineOrderingTests(unittest.TestCase):
             for path in (stem_dir / "instrumental.mp3", stem_dir / "vocals.mp3"):
                 path.write_bytes(b"audio")
             (output_dir / "lyrics.json").write_text(json.dumps({
-                "text": "Whisper words", "segments": [{"start_time": 0}],
-                "source": "lrclib+local-whisper",
+                "text": "Aligned words", "segments": [{"start_time": 0}],
+                "source": "lrclib+local-ctc",
             }), encoding="utf-8")
             (output_dir / "lrclib_lyrics.json").write_text(json.dumps({
                 "text": "LRCLIB words", "segments": [{"start_time": 1}], "source": "lrclib",
@@ -150,9 +220,93 @@ class PipelineOrderingTests(unittest.TestCase):
                 host.check_cache("job", "https://www.youtube.com/watch?v=abcdefghijk")
 
             payload = send_job.call_args.kwargs
-            self.assertEqual(payload["lyrics"]["text"], "Whisper words")
+            self.assertEqual(payload["lyrics"]["text"], "Aligned words")
             self.assertTrue(payload["hasLyrics"])
             self.assertTrue(payload["hasStems"])
+
+    def test_cache_check_prefers_local_silero_vad_over_lrclib(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            for path in (stem_dir / "instrumental.mp3", stem_dir / "vocals.mp3"):
+                path.write_bytes(b"audio")
+            (output_dir / "lyrics.json").write_text(json.dumps({
+                "text": "VAD words", "segments": [{"start_time": 0}],
+                "source": "local-silero-vad",
+            }), encoding="utf-8")
+            (output_dir / "lrclib_lyrics.json").write_text(json.dumps({
+                "text": "LRCLIB words", "segments": [{"start_time": 1}], "source": "lrclib",
+            }), encoding="utf-8")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "validate_stem_mp3"),
+                patch.object(host, "register_audio", side_effect=lambda path: f"audio://{path.name}"),
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.check_cache("job", "https://www.youtube.com/watch?v=abcdefghijk")
+
+            self.assertEqual(send_job.call_args.kwargs["lyrics"]["text"], "VAD words")
+
+    def test_prepare_lyrics_uses_silero_vad_backend_and_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            vocals = output_dir / "vocals.mp3"
+            vocals.write_bytes(b"audio")
+            segments = [{
+                "id": "silero-vad-segment-0",
+                "text": "Hello world",
+                "start_time": 0.0,
+                "end_time": 1.0,
+                "words": [],
+            }]
+
+            with (
+                patch.object(host.lyrics, "align_lyrics_with_silero_vad", return_value=segments) as silero,
+                patch.object(host.lyrics, "align_lyrics") as ctc,
+            ):
+                lyrics = host.lyrics.prepare_lyrics(
+                    "job",
+                    output_dir,
+                    vocals,
+                    "Hello world",
+                    {"text": "", "segments": [], "source": "none"},
+                    force=True,
+                    timing_method="silero-vad",
+                )
+
+            silero.assert_called_once_with("job", vocals, "Hello world")
+            ctc.assert_not_called()
+            self.assertEqual(lyrics["source"], "local-silero-vad")
+            self.assertEqual(lyrics["timingMethod"], "silero-vad")
+            cached = json.loads((output_dir / "lyrics.json").read_text(encoding="utf-8"))
+            self.assertEqual(cached["timingMethod"], "silero-vad")
+
+    def test_cache_check_accepts_legacy_whisper_timing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            for path in (stem_dir / "instrumental.mp3", stem_dir / "vocals.mp3"):
+                path.write_bytes(b"audio")
+            (output_dir / "lyrics.json").write_text(json.dumps({
+                "text": "Legacy words", "segments": [{"start_time": 0}],
+                "source": "manual+local-whisper",
+            }), encoding="utf-8")
+            (output_dir / "lrclib_lyrics.json").write_text(json.dumps({
+                "text": "LRCLIB words", "segments": [{"start_time": 1}], "source": "lrclib",
+            }), encoding="utf-8")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "validate_stem_mp3"),
+                patch.object(host, "register_audio", side_effect=lambda path: f"audio://{path.name}"),
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.check_cache("job", "https://www.youtube.com/watch?v=abcdefghijk")
+
+            self.assertEqual(send_job.call_args.kwargs["lyrics"]["text"], "Legacy words")
 
     def test_cache_check_removes_legacy_source_when_stems_exist(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -269,15 +423,12 @@ class PipelineOrderingTests(unittest.TestCase):
                     path.write_bytes(b"stem")
                 return stems
 
-            def fake_publish(*_args, **_kwargs):
-                self.assertFalse(observed["source"].exists())
-
             with (
                 patch.object(host, "app_download_dir", return_value=output_dir),
                 patch.object(host, "require_tools", return_value="yt-dlp"),
                 patch.object(host, "ytdlp_runtime_args", return_value=[]),
                 patch.object(host, "run_roformer", side_effect=fake_roformer),
-                patch.object(host, "publish_stems_and_complete", side_effect=fake_publish),
+                patch.object(host, "publish_stems_and_complete"),
                 patch.object(host, "send_job"),
                 patch.object(host.subprocess, "Popen", side_effect=FakeProcess),
             ):
@@ -289,6 +440,243 @@ class PipelineOrderingTests(unittest.TestCase):
             self.assertNotIn("-x", command)
             self.assertNotIn("--audio-format", command)
             self.assertIn("bestaudio/best", command)
+            self.assertFalse(observed["source"].exists())
+
+    def test_karaokize_default_original_timing_runs_after_roformer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "cache"
+            output_dir.mkdir()
+            source = output_dir / "source.webm"
+            source.write_bytes(b"source")
+            events = []
+
+            def normalize(_job_id, _source, output_path):
+                events.append("normalize")
+                output_path.write_bytes(b"wav")
+                return output_path
+
+            def run_roformer(_job_id, _source, separated_dir):
+                events.append("roformer")
+                stem_dir = separated_dir / "audio"
+                stem_dir.mkdir(parents=True)
+                stems = host.stem_paths(stem_dir)
+                for path in stems:
+                    path.write_bytes(b"stem")
+                return stems
+
+            def prepare(*_args, **_kwargs):
+                events.append("timing")
+                return {
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio", return_value=source),
+                patch.object(host.pipeline, "normalize_timing_audio", side_effect=normalize),
+                patch.object(host, "run_roformer", side_effect=run_roformer),
+                patch.object(host, "prepare_lyrics", side_effect=prepare),
+                patch.object(host, "publish_stems_and_complete", side_effect=lambda *_args, **_kwargs: events.append("publish")),
+                patch.object(host, "send_job"),
+            ):
+                host.run_download(
+                    "stem-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    [],
+                    {
+                        "jobId": "timing-job",
+                        "lyricsText": "Hello world",
+                        "timingMethod": "ctc",
+                        "timingSource": "original",
+                    },
+                )
+
+            self.assertEqual(events, ["roformer", "publish", "normalize", "timing"])
+
+    def test_karaokize_lyrics_first_original_timing_runs_before_roformer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "cache"
+            output_dir.mkdir()
+            source = output_dir / "source.webm"
+            source.write_bytes(b"source")
+            events = []
+
+            def normalize(_job_id, _source, output_path):
+                events.append("normalize")
+                output_path.write_bytes(b"wav")
+                return output_path
+
+            def run_roformer(_job_id, _source, separated_dir):
+                events.append("roformer")
+                stem_dir = separated_dir / "audio"
+                stem_dir.mkdir(parents=True)
+                stems = host.stem_paths(stem_dir)
+                for path in stems:
+                    path.write_bytes(b"stem")
+                return stems
+
+            def prepare(*_args, **_kwargs):
+                events.append("timing")
+                return {
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio", return_value=source),
+                patch.object(host.pipeline, "normalize_timing_audio", side_effect=normalize),
+                patch.object(host, "run_roformer", side_effect=run_roformer),
+                patch.object(host, "prepare_lyrics", side_effect=prepare),
+                patch.object(host, "publish_stems_and_complete", side_effect=lambda *_args, **_kwargs: events.append("publish")),
+                patch.object(host, "send_job"),
+            ):
+                host.run_download(
+                    "stem-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    [],
+                    {
+                        "jobId": "timing-job",
+                        "lyricsText": "Hello world",
+                        "timingMethod": "ctc",
+                        "timingSource": "original",
+                        "timingSchedule": "lyrics-first",
+                    },
+                )
+
+            self.assertEqual(events, ["normalize", "timing", "roformer", "publish"])
+
+    def test_karaokize_parallel_original_timing_starts_before_roformer(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "cache"
+            output_dir.mkdir()
+            source = output_dir / "source.webm"
+            source.write_bytes(b"source")
+            events = []
+            timing_complete = threading.Event()
+
+            def normalize(_job_id, _source, output_path):
+                events.append("normalize")
+                output_path.write_bytes(b"wav")
+                return output_path
+
+            def run_roformer(_job_id, _source, separated_dir):
+                events.append("roformer")
+                stem_dir = separated_dir / "audio"
+                stem_dir.mkdir(parents=True)
+                stems = host.stem_paths(stem_dir)
+                for path in stems:
+                    path.write_bytes(b"stem")
+                return stems
+
+            def prepare(*_args, **_kwargs):
+                events.append("timing")
+                timing_complete.set()
+                return {
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio", return_value=source),
+                patch.object(host.pipeline, "normalize_timing_audio", side_effect=normalize),
+                patch.object(host, "run_roformer", side_effect=run_roformer),
+                patch.object(host, "prepare_lyrics", side_effect=prepare),
+                patch.object(host, "publish_stems_and_complete"),
+                patch.object(host, "send_job"),
+            ):
+                host.run_download(
+                    "stem-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    [],
+                    {
+                        "jobId": "timing-job",
+                        "lyricsText": "Hello world",
+                        "timingMethod": "ctc",
+                        "timingSource": "original",
+                        "timingSchedule": "parallel",
+                    },
+                )
+
+            self.assertEqual(events[:2], ["normalize", "roformer"])
+            self.assertTrue(timing_complete.wait(2))
+            self.assertIn("timing", events)
+
+    def test_karaokize_original_timing_can_fetch_lrclib_before_alignment(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary) / "cache"
+            output_dir.mkdir()
+            source = output_dir / "source.webm"
+            source.write_bytes(b"source")
+            timing_complete = threading.Event()
+
+            def normalize(_job_id, _source, output_path):
+                output_path.write_bytes(b"wav")
+                return output_path
+
+            def run_roformer(_job_id, _source, separated_dir):
+                stem_dir = separated_dir / "audio"
+                stem_dir.mkdir(parents=True)
+                stems = host.stem_paths(stem_dir)
+                for path in stems:
+                    path.write_bytes(b"stem")
+                return stems
+
+            def prepare(_job_id, _output_dir, _audio_path, requested_text, *_args, **_kwargs):
+                self.assertEqual(requested_text, "Hello world")
+                timing_complete.set()
+                return {
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "lrclib+local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio", return_value=source),
+                patch.object(host.pipeline, "normalize_timing_audio", side_effect=normalize),
+                patch.object(host, "fetch_lrclib_lyrics", return_value={
+                    "text": "Hello world",
+                    "segments": [],
+                    "source": "lrclib",
+                }) as fetch_lrclib,
+                patch.object(host, "run_roformer", side_effect=run_roformer),
+                patch.object(host, "prepare_lyrics", side_effect=prepare),
+                patch.object(host, "publish_stems_and_complete"),
+                patch.object(host, "send_job"),
+            ):
+                host.run_download(
+                    "stem-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    [],
+                    {
+                        "jobId": "timing-job",
+                        "lyricsText": "",
+                        "timingMethod": "ctc",
+                        "timingSource": "original",
+                        "title": "Artist - Song",
+                        "duration": 123,
+                    },
+                )
+
+            self.assertTrue(timing_complete.wait(2))
+            fetch_lrclib.assert_called_once_with(
+                {"title": "Artist - Song", "duration": 123},
+                output_dir,
+            )
 
 
 class PipelineConcurrencyTests(unittest.TestCase):
@@ -348,7 +736,7 @@ class PipelineConcurrencyTests(unittest.TestCase):
                     patch.object(host, "resolve_cached_stems", side_effect=resolve),
                     patch.object(host, "prepare_lyrics", return_value={
                         "text": "Hello world", "segments": [{"words": []}],
-                        "source": "manual+local-whisper",
+                        "source": "manual+local-ctc",
                     }),
                     patch.object(host, "send_job", side_effect=observe_message),
                 ):
@@ -364,6 +752,103 @@ class PipelineConcurrencyTests(unittest.TestCase):
                     self.assertTrue(completed.is_set())
             finally:
                 host.finish_stem_job("abcdefghijk")
+
+    def test_timing_extraction_passes_selected_method_to_prepare_lyrics(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            stems = host.stem_paths(stem_dir)
+            for path in stems:
+                path.write_bytes(b"stem")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "resolve_cached_stems", return_value=stems),
+                patch.object(host, "prepare_lyrics", return_value={
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-silero-vad",
+                    "timingMethod": "silero-vad",
+                }) as prepare_lyrics,
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.extract_lyrics_timings(
+                    "timing-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    "Hello world",
+                    "silero-vad",
+                )
+
+            self.assertEqual(prepare_lyrics.call_args.kwargs["timing_method"], "silero-vad")
+            self.assertIn("Silero VAD", send_job.call_args.args[2])
+
+    def test_original_audio_timing_does_not_wait_for_stems(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            source = output_dir / "source.webm"
+            timing_audio = output_dir / "timing-audio.wav"
+            source.write_bytes(b"source")
+            timing_audio.write_bytes(b"wav")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio", return_value=source) as download_source,
+                patch.object(host.pipeline, "normalize_timing_audio", return_value=timing_audio) as normalize_audio,
+                patch.object(host, "resolve_cached_stems") as resolve_cached_stems,
+                patch.object(host, "prepare_lyrics", return_value={
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }) as prepare_lyrics,
+                patch.object(host, "send_job"),
+            ):
+                host.extract_lyrics_timings(
+                    "timing-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    "Hello world",
+                    "ctc",
+                    "original",
+                    [{"name": "SID", "value": "secret", "domain": ".youtube.com"}],
+                )
+
+            resolve_cached_stems.assert_not_called()
+            normalize_audio.assert_called_once()
+            self.assertEqual(prepare_lyrics.call_args.args[2], timing_audio)
+            self.assertEqual(prepare_lyrics.call_args.kwargs["timing_source"], "original")
+            self.assertEqual(download_source.call_args.kwargs["phase"], "lyrics")
+
+    def test_prepare_lyrics_cache_is_split_by_timing_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            audio = output_dir / "audio.webm"
+            audio.write_bytes(b"audio")
+            cached = {
+                "text": "Hello world",
+                "segments": [{"words": []}],
+                "source": "local-ctc",
+                "timingMethod": "ctc",
+                "timingSource": "vocal-stem",
+                "timingVersion": host.constants.LYRICS_TIMING_VERSION,
+                "textHash": "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c",
+            }
+            (output_dir / "lyrics.json").write_text(json.dumps(cached), encoding="utf-8")
+
+            with patch.object(host.lyrics, "align_lyrics", return_value=[{"words": []}]) as align:
+                lyrics = host.lyrics.prepare_lyrics(
+                    "job",
+                    output_dir,
+                    audio,
+                    "Hello world",
+                    {"text": "", "segments": [], "source": "none"},
+                    timing_method="ctc",
+                    timing_source="original",
+                )
+
+            align.assert_called_once()
+            self.assertEqual(lyrics["timingSource"], "original")
 
 
 class NativeMessagingTests(unittest.TestCase):
@@ -473,7 +958,7 @@ class FailureHandlingTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "locked"):
                     host.resolve_cached_stems("job", stem_dir)
 
-    def test_lyrics_subprocess_failure_reaches_caller(self):
+    def test_alignment_subprocess_failure_reaches_caller(self):
         failed = subprocess.CompletedProcess(
             args=["python", "lyrics_runner.py"],
             returncode=1,
@@ -493,9 +978,9 @@ class FailureHandlingTests(unittest.TestCase):
                 patch.object(host, "send_job"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "CUDA out of memory"):
-                    host.transcribe_lyrics("job", vocals)
+                    host.align_lyrics("job", vocals, "Hello world")
 
-    def test_lyrics_invalid_json_is_reported(self):
+    def test_alignment_invalid_json_is_reported(self):
         completed = subprocess.CompletedProcess(
             args=["python", "lyrics_runner.py"],
             returncode=0,
@@ -515,7 +1000,7 @@ class FailureHandlingTests(unittest.TestCase):
                 patch.object(host, "send_job"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "invalid result"):
-                    host.transcribe_lyrics("job", vocals)
+                    host.align_lyrics("job", vocals, "Hello world")
 
 
 if __name__ == "__main__":
