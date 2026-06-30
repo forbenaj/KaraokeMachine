@@ -47,6 +47,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 ),
@@ -57,6 +58,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 ) *,
@@ -67,6 +69,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 )::before,
@@ -77,6 +80,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 ) *::before,
@@ -87,6 +91,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 )::after,
@@ -97,6 +102,7 @@
   #dkaraoke-right-panel,
   #dkaraoke-lyrics-overlay,
   #dkaraoke-settings-modal,
+  #dkaraoke-debug-panel,
   #dkaraoke-queue-button,
   #dkaraoke-queue-panel
 ) *::after {
@@ -215,16 +221,6 @@ html.dkaraoke-enabled ytd-watch-flexy [id*="cinematic"] {
 /* ==========================================================================
    Workspace Layout
    ========================================================================== */
-
-#dkaraoke-logo {
-  display: none;
-  width: 116px;
-  height: 44px;
-  margin-left: 8px;
-  object-fit: contain;
-  user-select: none;
-  filter: drop-shadow(3px 3px 0 rgba(0, 0, 0, 0.95));
-}
 
 #dkaraoke-left-panel,
 #dkaraoke-right-panel {
@@ -1132,6 +1128,114 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding-left: 22px;
+}
+
+.dkaraoke-debug-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Debug Console
+   ========================================================================== */
+
+#dkaraoke-debug-panel {
+  margin: 14px 0 0;
+  border: var(--dk-border-sm);
+  color: var(--dk-ink);
+  background: var(--dk-paper);
+  box-shadow: var(--dk-small-shadow);
+  font: 700 12px/1.35 var(--dk-ui-font);
+}
+
+.dkaraoke-debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-bottom: var(--dk-border-sm);
+  background: var(--dk-cyan);
+  text-transform: uppercase;
+}
+
+.dkaraoke-debug-header strong {
+  font: 900 16px/1 var(--dk-display-font);
+}
+
+.dkaraoke-debug-meta {
+  color: var(--dk-body-copy);
+  font-size: 10px;
+}
+
+.dkaraoke-debug-indicators {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 6px;
+  padding: 9px 10px;
+  border-bottom: var(--dk-border-sm);
+  background: var(--dk-note);
+}
+
+.dkaraoke-debug-indicator {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dkaraoke-debug-square {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  border: 2px solid var(--dk-ink);
+  background: var(--dk-disabled);
+}
+
+.dkaraoke-debug-indicator[data-active="true"] .dkaraoke-debug-square {
+  background: var(--dk-green);
+  box-shadow: 0 0 0 2px var(--dk-paper), 0 0 10px var(--dk-green);
+}
+
+.dkaraoke-debug-log {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 650 11px/1.35 Consolas, "Cascadia Mono", monospace;
+}
+
+.dkaraoke-debug-log li {
+  display: grid;
+  grid-template-columns: 76px 92px minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.18);
+}
+
+.dkaraoke-debug-log li:last-child {
+  border-bottom: 0;
+}
+
+.dkaraoke-debug-log time {
+  color: var(--dk-body-copy);
+}
+
+.dkaraoke-debug-log strong {
+  overflow: hidden;
+  color: var(--dk-magenta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dkaraoke-debug-log span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* ==========================================================================

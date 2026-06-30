@@ -11,6 +11,7 @@ from .cache import is_complete_file, read_json_cache, write_json_cache
 from .constants import (
     DEFAULT_LYRICS_TIMING_METHOD,
     DEFAULT_LYRICS_TIMING_SOURCE,
+    LEGACY_LYRICS_TIMING_SOURCE,
     LRCLIB_SEARCH_URL,
     LRC_TIMESTAMP_RE,
     LYRICS_TIMEOUT_SECONDS,
@@ -427,7 +428,7 @@ def prepare_lyrics(
             cached.get("timingVersion") == LYRICS_TIMING_VERSION
             and cache_matches_text
             and cached_method == timing_method
-            and (cached.get("timingSource") or DEFAULT_LYRICS_TIMING_SOURCE) == timing_source
+            and (cached.get("timingSource") or LEGACY_LYRICS_TIMING_SOURCE) == timing_source
         ):
             return {key: cached.get(key) for key in ("text", "segments", "source", "timingMethod", "timingSource")}
     provider_source = (provider_lyrics or {}).get("source") or "none"

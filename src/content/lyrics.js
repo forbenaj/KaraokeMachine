@@ -24,6 +24,9 @@ function setLyricsStatus(message, state = "idle") {
   if (!status) return;
   status.textContent = message;
   status.dataset.state = state;
+  if (!isProgressDebugMessage(message)) {
+    appendDebugLog(lyricsSearchJobId ? "lyricsSearch" : "lyricsTiming", state, message);
+  }
 }
 
 function setLyricsStyle(nextStyle, persist = true) {
@@ -340,6 +343,7 @@ function searchLrclibLyrics() {
   if (!videoId || lyricsSearchJobId) return;
   const jobId = crypto.randomUUID();
   lyricsSearchJobId = jobId;
+  setDebugJobProcess(jobId, "lyricsSearch", true, { message: "Searching LRCLIB..." });
   updateLyricsProcessButtons();
   setLyricsStatus("Searching LRCLIB...", "busy");
   chrome.runtime.sendMessage({
@@ -353,6 +357,8 @@ function searchLrclibLyrics() {
     if (lyricsSearchJobId !== jobId) return;
     if (!response?.ok || error) {
       lyricsSearchJobId = null;
+      markJobFinished(jobId);
+      clearDebugJob(jobId);
       updateLyricsProcessButtons();
       setLyricsStatus(error || "LRCLIB search failed. You can enter lyrics manually.", "info");
     }
@@ -369,6 +375,9 @@ function extractLyricsTimings() {
   timingsProcessing = true;
   const jobId = crypto.randomUUID();
   timingsJobId = jobId;
+  setDebugJobProcess(jobId, "lyricsTiming", true, {
+    message: "Starting lyric timing extraction...",
+  });
   updateLyricsProcessButtons();
   setProcessing(processing);
   const timingMethod = normalizeTimingMethod(settings.timingExtractionMethod);
@@ -389,6 +398,8 @@ function extractLyricsTimings() {
     if (!response?.ok || error) {
       timingsProcessing = false;
       timingsJobId = null;
+      markJobFinished(jobId);
+      clearDebugJob(jobId);
       updateLyricsProcessButtons();
       setProcessing(processing);
       setLyricsStatus(error || "Could not extract lyric timings.", "error");
@@ -406,6 +417,9 @@ function prepareKaraokizeLyricsTiming() {
   timingsProcessing = true;
   const jobId = crypto.randomUUID();
   timingsJobId = jobId;
+  setDebugJobProcess(jobId, "lyricsTiming", true, {
+    message: "Queued lyric timing with Karaokize...",
+  });
   updateLyricsProcessButtons();
   setProcessing(processing);
   const timingMethod = normalizeTimingMethod(settings.timingExtractionMethod);

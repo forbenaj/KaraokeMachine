@@ -1,6 +1,5 @@
 const ROOT_CLASS = "dkaraoke-enabled";
 const BUTTON_ID = "dkaraoke-toggle";
-const LOGO_ID = "dkaraoke-logo";
 const MENU_ID = "dkaraoke-menu";
 const LEFT_PANEL_ID = "dkaraoke-left-panel";
 const RIGHT_RAIL_ID = "dkaraoke-right-rail";
@@ -19,6 +18,10 @@ const LYRICS_STYLE_ID = "dkaraoke-lyrics-style";
 const LYRICS_OVERLAY_ID = "dkaraoke-lyrics-overlay";
 const SETTINGS_BUTTON_ID = "dkaraoke-settings";
 const SETTINGS_MODAL_ID = "dkaraoke-settings-modal";
+const DEBUG_PANEL_ID = "dkaraoke-debug-panel";
+const DEBUG_INDICATORS_ID = "dkaraoke-debug-indicators";
+const DEBUG_LOG_ID = "dkaraoke-debug-log";
+const DEBUG_ENABLED_ID = "dkaraoke-debug-enabled";
 const TIMING_METHOD_ID = "dkaraoke-setting-timing-method";
 const TIMING_SOURCE_ID = "dkaraoke-setting-timing-source";
 const TIMING_SCHEDULE_ID = "dkaraoke-setting-timing-schedule";
@@ -56,6 +59,7 @@ const DEFAULT_SETTINGS = {
   defaultInstrumental: true,
   defaultVocals: false,
   defaultLyrics: true,
+  debugEnabled: false,
 };
 const DEFAULT_PLAYBACK_STATE = {
   instrumental: true,
@@ -106,6 +110,12 @@ let timingsProcessing = false;
 let timingsJobId = null;
 let autoExtractAfterSearch = false;
 let monitorObserver = null;
+let debugLogEntries = [];
+let debugLastSignature = "";
+let debugQueueSignature = "";
+const debugProcessJobs = new Map();
+const debugCurrentPhaseByJob = new Map();
+let finishedJobIds = new Set();
 const monitorActivities = new Map();
 
 function normalizeLyricsStyle(value) {

@@ -278,10 +278,12 @@ class PipelineOrderingTests(unittest.TestCase):
 
             silero.assert_called_once_with("job", vocals, "Hello world")
             ctc.assert_not_called()
-            self.assertEqual(lyrics["source"], "local-silero-vad")
+            self.assertEqual(lyrics["source"], "local-silero-vad-original")
             self.assertEqual(lyrics["timingMethod"], "silero-vad")
+            self.assertEqual(lyrics["timingSource"], "original")
             cached = json.loads((output_dir / "lyrics.json").read_text(encoding="utf-8"))
             self.assertEqual(cached["timingMethod"], "silero-vad")
+            self.assertEqual(cached["timingSource"], "original")
 
     def test_cache_check_accepts_legacy_whisper_timing(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -609,7 +611,8 @@ class PipelineOrderingTests(unittest.TestCase):
                     },
                 )
 
-            self.assertEqual(events[:2], ["normalize", "roformer"])
+            self.assertEqual(events[0], "normalize")
+            self.assertIn("roformer", events)
             self.assertTrue(timing_complete.wait(2))
             self.assertIn("timing", events)
 
@@ -725,6 +728,8 @@ class PipelineConcurrencyTests(unittest.TestCase):
                         "timing-job",
                         "https://www.youtube.com/watch?v=abcdefghijk",
                         "Hello world",
+                        "ctc",
+                        "vocal-stem",
                     )
                 except Exception as exc:
                     errors.append(exc)
@@ -778,6 +783,7 @@ class PipelineConcurrencyTests(unittest.TestCase):
                     "https://www.youtube.com/watch?v=abcdefghijk",
                     "Hello world",
                     "silero-vad",
+                    "vocal-stem",
                 )
 
             self.assertEqual(prepare_lyrics.call_args.kwargs["timing_method"], "silero-vad")
@@ -809,9 +815,6 @@ class PipelineConcurrencyTests(unittest.TestCase):
                     "timing-job",
                     "https://www.youtube.com/watch?v=abcdefghijk",
                     "Hello world",
-                    "ctc",
-                    "original",
-                    [{"name": "SID", "value": "secret", "domain": ".youtube.com"}],
                 )
 
             resolve_cached_stems.assert_not_called()
@@ -819,6 +822,40 @@ class PipelineConcurrencyTests(unittest.TestCase):
             self.assertEqual(prepare_lyrics.call_args.args[2], timing_audio)
             self.assertEqual(prepare_lyrics.call_args.kwargs["timing_source"], "original")
             self.assertEqual(download_source.call_args.kwargs["phase"], "lyrics")
+
+    def test_original_audio_timing_reuses_legacy_source_audio(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            legacy_audio = output_dir / "audio.mp3"
+            timing_audio = output_dir / "timing-audio.wav"
+            legacy_audio.write_bytes(b"source")
+            timing_audio.write_bytes(b"wav")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.pipeline, "download_source_audio") as download_source,
+                patch.object(host.pipeline, "normalize_timing_audio", return_value=timing_audio) as normalize_audio,
+                patch.object(host, "prepare_lyrics", return_value={
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc-original",
+                    "timingMethod": "ctc",
+                    "timingSource": "original",
+                }) as prepare_lyrics,
+                patch.object(host, "send_job"),
+            ):
+                host.extract_lyrics_timings(
+                    "timing-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    "Hello world",
+                    "ctc",
+                    "original",
+                )
+
+            download_source.assert_not_called()
+            self.assertEqual(normalize_audio.call_args.args[1], legacy_audio)
+            self.assertEqual(prepare_lyrics.call_args.args[2], timing_audio)
+            self.assertTrue(legacy_audio.exists())
 
     def test_prepare_lyrics_cache_is_split_by_timing_source(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -849,6 +886,35 @@ class PipelineConcurrencyTests(unittest.TestCase):
 
             align.assert_called_once()
             self.assertEqual(lyrics["timingSource"], "original")
+
+    def test_prepare_lyrics_treats_missing_cached_timing_source_as_legacy_vocal_stem(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            vocals = output_dir / "vocals.mp3"
+            vocals.write_bytes(b"audio")
+            cached = {
+                "text": "Hello world",
+                "segments": [{"words": []}],
+                "source": "local-ctc",
+                "timingMethod": "ctc",
+                "timingVersion": host.constants.LYRICS_TIMING_VERSION,
+                "textHash": "64ec88ca00b268e5ba1a35678a1b5316d212f4f366b2477232534a8aeca37f3c",
+            }
+            (output_dir / "lyrics.json").write_text(json.dumps(cached), encoding="utf-8")
+
+            with patch.object(host.lyrics, "align_lyrics") as align:
+                lyrics = host.lyrics.prepare_lyrics(
+                    "job",
+                    output_dir,
+                    vocals,
+                    "Hello world",
+                    {"text": "", "segments": [], "source": "none"},
+                    timing_method="ctc",
+                    timing_source="vocal-stem",
+                )
+
+            align.assert_not_called()
+            self.assertEqual(lyrics["segments"], cached["segments"])
 
 
 class NativeMessagingTests(unittest.TestCase):

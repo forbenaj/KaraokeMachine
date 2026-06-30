@@ -6,10 +6,23 @@ function summarizeQueueItem(item) {
   return item.message || "Processing";
 }
 
+function isQueueItemTerminal(item) {
+  return ["complete", "error"].includes(item?.status);
+}
+
 function applyQueueForCurrentVideo() {
   const videoId = currentVideoId();
-  const job = queueItems.find((item) => item.videoId && item.videoId === videoId);
+  const job = queueItems.find((item) =>
+    item.videoId
+    && item.videoId === videoId
+    && !isQueueItemTerminal(item)
+    && !finishedJobIds.has(item.jobId)
+  );
   if (!job) return;
+  setDebugJobProcess(job.jobId, "queue", job.status === "queued", {
+    silent: true,
+  });
+  if (activeJobId === job.jobId) return;
   activeJobId = job.jobId;
   activeJobStemsReady = false;
   cacheCheckComplete = true;
@@ -76,7 +89,9 @@ function ensureQueueUI() {
 }
 
 function updateQueueUI(nextItems = queueItems) {
-  queueItems = Array.isArray(nextItems) ? nextItems : [];
+  queueItems = (Array.isArray(nextItems) ? nextItems : [])
+    .filter((item) => !isQueueItemTerminal(item) && !finishedJobIds.has(item.jobId));
+  recordQueueDebug(queueItems);
   const { button, panel } = ensureQueueUI();
   const current = queueItems[0];
   button.hidden = queueItems.length === 0;

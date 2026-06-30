@@ -37,6 +37,7 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
   if (message?.type !== "dkaraoke-status") return;
+  recordBackendDebug(message);
   if (updateMonitorFromBackend(message)) return;
   if (cacheCheckJobId && message.jobId === cacheCheckJobId) {
     if (message.status === "cacheCheck") {

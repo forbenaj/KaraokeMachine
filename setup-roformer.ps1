@@ -17,11 +17,15 @@ $checkpointSha256 = "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c
 $checkpointSize = 913106900
 $checkpointUrl = "https://huggingface.co/KimberleyJSN/melbandroformer/resolve/main/MelBandRoformer.ckpt?download=true"
 
-if (-not (Test-Path $pythonPath)) {
-  & $Python -m venv $venv
+function Invoke-Checked([string]$Description, [scriptblock]$Command) {
+  & $Command
   if ($LASTEXITCODE -ne 0) {
-    throw "Could not create the RoFormer Python environment."
+    throw "$Description failed with exit code $LASTEXITCODE."
   }
+}
+
+if (-not (Test-Path $pythonPath)) {
+  Invoke-Checked "RoFormer Python environment creation" { & $Python -m venv $venv }
 }
 foreach ($command in @("git", "curl.exe")) {
   if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
@@ -31,18 +35,28 @@ foreach ($command in @("git", "curl.exe")) {
 
 New-Item -ItemType Directory -Path $modelsRoot -Force | Out-Null
 if (-not (Test-Path (Join-Path $repo ".git"))) {
-  git clone https://github.com/KimberleyJensen/Mel-Band-Roformer-Vocal-Model.git $repo
+  Invoke-Checked "RoFormer repository clone" {
+    git clone https://github.com/KimberleyJensen/Mel-Band-Roformer-Vocal-Model.git $repo
+  }
 }
-git -C $repo fetch origin $commit --depth 1
-git -C $repo checkout --detach $commit
+Invoke-Checked "RoFormer repository fetch" { git -C $repo fetch origin $commit --depth 1 }
+Invoke-Checked "RoFormer repository checkout" { git -C $repo checkout --detach $commit }
 
-& $pythonPath -m pip install --upgrade pip setuptools wheel
+Invoke-Checked "Python packaging tool installation" {
+  & $pythonPath -m pip install --upgrade pip setuptools wheel
+}
 $torchIndex = "https://download.pytorch.org/whl/$TorchBuild"
-& $pythonPath -m pip install "torch==$TorchVersion" --index-url $torchIndex
-& $pythonPath -m pip install "torchaudio==$TorchVersion" --index-url $torchIndex
-& $pythonPath -m pip install numpy SoundFile PyYAML ml_collections "omegaconf==2.2.3" `
-  "beartype==0.14.1" "rotary_embedding_torch==0.3.5" "einops==0.6.1" librosa `
-  "silero-vad"
+Invoke-Checked "PyTorch installation" {
+  & $pythonPath -m pip install "torch==$TorchVersion" --index-url $torchIndex
+}
+Invoke-Checked "TorchAudio installation" {
+  & $pythonPath -m pip install "torchaudio==$TorchVersion" --index-url $torchIndex
+}
+Invoke-Checked "RoFormer dependency installation" {
+  & $pythonPath -m pip install numpy SoundFile PyYAML ml_collections "omegaconf==2.2.3" `
+    "beartype==0.14.1" "rotary_embedding_torch==0.3.5" "einops==0.6.1" librosa `
+    "silero-vad"
+}
 
 $download = $true
 if (Test-Path $checkpoint) {
@@ -53,9 +67,12 @@ if (Test-Path $checkpoint) {
 }
 if ($download) {
   Write-Host "Downloading 913 MB RoFormer checkpoint..."
-  & curl.exe --location --fail --continue-at - --output $checkpoint $checkpointUrl
-  if ($LASTEXITCODE -ne 0) {
-    throw "RoFormer checkpoint download failed. Re-run setup-roformer.ps1 to resume."
+  try {
+    Invoke-Checked "RoFormer checkpoint download" {
+      & curl.exe --location --fail --continue-at - --output $checkpoint $checkpointUrl
+    }
+  } catch {
+    throw "RoFormer checkpoint download failed. Re-run setup-roformer.ps1 to resume. $($_.Exception.Message)"
   }
 }
 $actualHash = (Get-FileHash -Algorithm SHA256 $checkpoint).Hash.ToLowerInvariant()

@@ -11,6 +11,7 @@ function normalizeSettings(value = {}) {
     defaultInstrumental: value.defaultInstrumental !== false,
     defaultVocals: value.defaultVocals === true,
     defaultLyrics: value.defaultLyrics !== false,
+    debugEnabled: value.debugEnabled === true,
   };
 }
 
@@ -62,6 +63,7 @@ function updateSettingsModalControls() {
   const instrumental = modal.querySelector("#dkaraoke-default-instrumental");
   const vocals = modal.querySelector("#dkaraoke-default-vocals");
   const lyrics = modal.querySelector("#dkaraoke-default-lyrics");
+  const debug = modal.querySelector(`#${DEBUG_ENABLED_ID}`);
   if (latency) latency.value = String(settings.latencyMs);
   if (lyricsLatency) lyricsLatency.value = String(settings.lyricsLatencyMs);
   if (timingMethod) timingMethod.value = settings.timingExtractionMethod;
@@ -75,6 +77,7 @@ function updateSettingsModalControls() {
   if (instrumental) instrumental.checked = settings.defaultInstrumental;
   if (vocals) vocals.checked = settings.defaultVocals;
   if (lyrics) lyrics.checked = settings.defaultLyrics;
+  if (debug) debug.checked = settings.debugEnabled;
   for (const input of [instrumental, vocals, lyrics].filter(Boolean)) {
     input.disabled = settings.defaultStateMode !== "reset";
   }
@@ -260,8 +263,28 @@ function ensureSettingsModal() {
   }
 
   defaults.append(legend, keepLabel, resetLabel, resetOptions);
+
+  const diagnostics = document.createElement("fieldset");
+  diagnostics.className = "dkaraoke-settings-section";
+  const diagnosticsLegend = document.createElement("legend");
+  diagnosticsLegend.textContent = "Diagnostics";
+  const debugLabel = document.createElement("label");
+  debugLabel.className = "dkaraoke-debug-toggle";
+  const debugInput = document.createElement("input");
+  debugInput.id = DEBUG_ENABLED_ID;
+  debugInput.type = "checkbox";
+  debugInput.addEventListener("change", () => {
+    settings.debugEnabled = debugInput.checked;
+    saveSettings();
+    renderDebugPanel();
+    updateSettingsModalControls();
+  });
+  debugLabel.append(debugInput, document.createTextNode("Debug console"));
+  diagnostics.append(diagnosticsLegend, debugLabel);
+
   body.appendChild(timing);
   body.appendChild(defaults);
+  body.appendChild(diagnostics);
   modal.append(header, body);
   modal.addEventListener("click", (event) => {
     if (event.target === modal) modal.close();

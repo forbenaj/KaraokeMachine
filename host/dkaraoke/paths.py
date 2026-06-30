@@ -15,7 +15,7 @@ TIMING_JOB_LOCKS = {}
 def validate_youtube_url(raw_url):
     parsed = urlparse(raw_url)
     host = (parsed.hostname or "").lower()
-    if parsed.scheme not in {"http", "https"} or host not in YOUTUBE_HOSTS:
+    if parsed.scheme != "https" or host not in YOUTUBE_HOSTS:
         raise ValueError("Only YouTube video URLs are supported.")
     return raw_url
 

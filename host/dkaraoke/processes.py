@@ -35,19 +35,6 @@ def roformer_progress_from_line(line, total_seconds=None):
     return total_seconds, (remaining_seconds, percent)
 
 
-def read_message():
-    raw_length = sys.stdin.buffer.read(4)
-    if not raw_length:
-        return None
-    length = struct.unpack("<I", raw_length)[0]
-    if length > MAX_NATIVE_MESSAGE_BYTES:
-        raise ValueError("Native message exceeds the 1 MiB size limit.")
-    payload = sys.stdin.buffer.read(length)
-    if len(payload) != length:
-        raise ValueError("Received a truncated native message.")
-    return json.loads(payload.decode("utf-8"))
-
-
 def subprocess_creationflags():
     if os.name != "nt":
         return 0

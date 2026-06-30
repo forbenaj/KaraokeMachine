@@ -208,6 +208,7 @@ function mountKaraokeMenu() {
   updateLyricsProcessButtons();
   setLyricsStyle(lyricsStyle, false);
   updateSettingsModalControls();
+  renderDebugPanel();
   refreshQueueState();
   checkSavedResults();
   return true;
@@ -243,6 +244,7 @@ function applyState() {
   }
   if (enabled && lyricsEnabled && lyricsReady) startLyricsRendering();
   updateWorkspaceLayout();
+  renderDebugPanel();
   requestAnimationFrame(() => {
     updatePlaybackMonitor();
     window.dispatchEvent(new Event("resize"));
@@ -297,6 +299,8 @@ function queueMount() {
 
 function remountAfterNavigation() {
   monitorActivities.clear();
+  debugProcessJobs.clear();
+  appendDebugLog("karaokize", "info", "YouTube navigation detected.");
   processing = false;
   cacheCheckJobId = null;
   cacheCheckComplete = false;
@@ -313,6 +317,7 @@ function remountAfterNavigation() {
   if (settings.defaultStateMode === "reset") applyPlaybackState(defaultPlaybackState());
   setLyrics(youtubeLyrics);
   setProcessStatus("Checking saved karaoke results...", "busy");
+  renderDebugPanel();
   mountAttempts = 0;
   queueMount();
   refreshQueueState();

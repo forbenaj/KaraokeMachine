@@ -20,11 +20,15 @@ function setProcessStatus(message, state = "idle", progress = null) {
   if (!status) return;
   status.textContent = message;
   status.dataset.state = state;
+  if (!isProgressDebugMessage(message)) appendDebugLog("karaokize", state, message, { progress });
   setProcessProgress(progress);
 }
 
 function setProcessing(nextProcessing) {
   processing = nextProcessing;
+  setDebugJobProcess(activeJobId || "karaokize", "karaokize", processing, {
+    message: processing ? "Karaokize active" : "Karaokize idle",
+  });
   setProcessProgress();
   updateLyricsProcessButtons();
   updatePlaybackMonitor();
@@ -38,6 +42,7 @@ function checkSavedResults() {
   const jobId = crypto.randomUUID();
   cacheCheckJobId = jobId;
   setMonitorActivity(jobId, "cache", "Checking cache...");
+  setDebugJobProcess(jobId, "cache", true, { message: "Checking saved results..." });
   setProcessing(false);
   setProcessStatus("Checking saved karaoke results...", "busy");
   chrome.runtime.sendMessage({

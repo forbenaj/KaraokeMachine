@@ -201,6 +201,7 @@ def run_roformer(job_id, source_path, output_dir):
 
 def download_source_audio(job_id, url, video_id, cookies, output_template, phase="download"):
     yt_dlp = require_tools()
+    download_label = "Downloading original audio for lyric timing" if phase == "lyrics" else "Downloading source audio"
     base_command = [
         yt_dlp,
         "--ignore-config",
@@ -234,7 +235,7 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
             command.append(url)
 
             source_path = None
-            send_job(job_id, "status", "Downloading source audio...", progress=0, phase=phase)
+            send_job(job_id, "status", f"{download_label}...", progress=0, phase=phase)
             LOGGER.info("job=%s video=%s starting yt-dlp cookies=%s", job_id, video_id, bool(cookie_path))
             output_lines = []
             process = subprocess.Popen(
@@ -268,7 +269,7 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
                     send_job(
                         job_id,
                         "progress",
-                        f"Downloading source audio... {percent:.1f}%",
+                        f"{download_label}... {percent:.1f}%",
                         progress=percent,
                         phase=phase,
                     )
@@ -425,6 +426,7 @@ def extract_lyrics_timings(
     timing_source = normalize_lyrics_timing_source(timing_source)
     output_dir = app_download_dir(video_id)
     stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+    legacy_audio_path = output_dir / "audio.mp3"
     if not (requested_text or "").strip():
         raise ValueError("Enter lyrics before extracting lyric timings.")
     provider_lyrics = read_json_cache(output_dir / "lrclib_lyrics.json")
@@ -433,11 +435,20 @@ def extract_lyrics_timings(
     with timing_job_lock(video_id):
         if timing_source == "original":
             with tempfile.TemporaryDirectory(prefix=f"dkaraoke-lyrics-source-{video_id}-") as source_temp:
-                source_path = download_source_audio(
-                    job_id, url, video_id, cookies or [],
-                    Path(source_temp) / "audio.%(ext)s",
-                    phase="lyrics",
-                )
+                if is_complete_file(legacy_audio_path):
+                    send_job(
+                        job_id,
+                        "status",
+                        "Using saved source audio for lyric timing...",
+                        phase="lyrics",
+                    )
+                    source_path = legacy_audio_path
+                else:
+                    source_path = download_source_audio(
+                        job_id, url, video_id, cookies or [],
+                        Path(source_temp) / "audio.%(ext)s",
+                        phase="lyrics",
+                    )
                 timing_audio_path = normalize_timing_audio(
                     job_id, source_path, Path(source_temp) / "timing-audio.wav",
                 )
@@ -446,7 +457,8 @@ def extract_lyrics_timings(
                     provider_lyrics, force=True, timing_method=timing_method,
                     timing_source=timing_source,
                 )
-                unlink_best_effort(source_path, "processed lyrics source audio cleanup")
+                if source_path != legacy_audio_path:
+                    unlink_best_effort(source_path, "processed lyrics source audio cleanup")
         else:
             _, vocals_path = resolve_cached_stems(job_id, stem_dir)
             if not is_complete_file(vocals_path):
@@ -464,6 +476,13 @@ def extract_lyrics_timings(
                     raise FileNotFoundError(
                         "Karaokize did not produce a usable vocal stem."
                     )
+            else:
+                send_job(
+                    job_id,
+                    "status",
+                    "Using cached vocal stem for lyric timing...",
+                    phase="lyrics",
+                )
             lyrics = prepare_lyrics(
                 job_id, output_dir, vocals_path, requested_text,
                 provider_lyrics, force=True, timing_method=timing_method,

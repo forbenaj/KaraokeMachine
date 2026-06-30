@@ -3,3 +3,5 @@
 separated/
 __pycache__/
 *.pyc
+host/dkaraoke_host.cmd
+host/com.dkaraoke.downloader.json

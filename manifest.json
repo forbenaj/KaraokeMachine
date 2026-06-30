@@ -21,6 +21,7 @@
       "css": ["styles.css"],
       "js": [
         "src/content/state.js",
+        "src/content/debug.js",
         "src/content/settings.js",
         "src/content/lyrics.js",
         "src/content/queue.js",
@@ -36,7 +37,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["logo.png", "star.svg", "jagged_star.svg", "lines.svg"],
+      "resources": ["star.svg", "jagged_star.svg", "lines.svg"],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

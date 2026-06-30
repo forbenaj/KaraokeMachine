@@ -41,7 +41,7 @@ def execute_message(message):
             message.get("cookies") or [],
         )
         return
-    if action not in {"prepareKaraoke", "downloadMp3"}:
+    if action != "prepareKaraoke":
         raise ValueError("Unsupported backend action.")
     run_download(
         job_id,
@@ -60,13 +60,13 @@ def handle_message(message):
     action = message.get("action")
     supported = {
         "checkCache", "searchLrclib", "extractLyricsTimings",
-        "prepareKaraoke", "downloadMp3",
+        "prepareKaraoke",
     }
     if action not in supported:
         raise ValueError("Unsupported backend action.")
 
     stem_video_id = None
-    if action in {"prepareKaraoke", "downloadMp3"}:
+    if action == "prepareKaraoke":
         url = validate_youtube_url(str(message.get("url") or ""))
         stem_video_id = video_id_from_url(url)
         begin_stem_job(stem_video_id)

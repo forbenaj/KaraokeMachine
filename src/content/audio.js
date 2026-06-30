@@ -277,6 +277,7 @@ function bindVideo() {
 }
 
 function discardCustomAudio() {
+  setDebugJobProcess(activeJobId || "audio-load", "audioLoad", false);
   setSourceMode("original");
   clearCustomAudioInterruptionTimer();
   customAudioReady = false;
@@ -292,6 +293,10 @@ function discardCustomAudio() {
 
 function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchronizing instrumental...") {
   discardCustomAudio();
+  const debugJobId = activeJobId || "audio-load";
+  setDebugJobProcess(debugJobId, "audioLoad", true, {
+    message: "Loading separated audio in the page...",
+  });
   const ready = new Set();
   for (const stem of STEMS) {
     const audio = document.createElement("audio");
@@ -307,6 +312,9 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
       if (ready.size !== STEMS.length) return;
       customAudioReady = true;
       playBlocked = false;
+      setDebugJobProcess(debugJobId, "audioLoad", false, {
+        message: "Separated audio loaded in the page.",
+      });
       updateStemButtons();
       setProcessStatus(readyMessage, "success");
       applyStemSelection();
@@ -337,6 +345,9 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
     audio.addEventListener("error", () => {
       if (customAudio[stem] !== audio) return;
       customAudioReady = false;
+      setDebugJobProcess(debugJobId, "audioLoad", false, {
+        message: `The ${stem} track failed to load.`,
+      });
       setSourceMode("original");
       updateStemButtons();
       setProcessStatus(`The ${stem} track could not be loaded from the backend.`, "error");
