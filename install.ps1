@@ -49,7 +49,7 @@ $python = $pythonCommand.Source
 Invoke-Checked "Python validation" { & $python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" }
 
 if (-not (Test-Path $toolsPython)) {
-  Write-Host "Creating the DKaraoKe tools environment..."
+  Write-Host "Creating the Karaoke Machine! tools environment..."
   Invoke-Checked "Python environment creation" { & $python -m venv $toolsVenv }
 }
 
@@ -111,7 +111,7 @@ set "PATH=$launcherPath;%PATH%"
 
 [ordered]@{
   name = $hostName
-  description = "Local downloader and RoFormer separator for DKaraoKe"
+  description = "Local downloader and RoFormer separator for Karaoke Machine!"
   path = $hostLauncher
   type = "stdio"
   allowed_origins = @("chrome-extension://$extensionId/")

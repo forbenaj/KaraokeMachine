@@ -379,7 +379,7 @@ function postDownloadToHost(job) {
       videoId: job.videoId || "",
       phase: "connect",
     });
-    failDeferredTimings(job.videoId, "Karaokize could not start, so lyric timings cannot be extracted.");
+    failDeferredTimings(job.videoId, "Karaoke Machine! could not start, so lyric timings cannot be extracted.");
     sendToTab(job.tabId, {
       type: "dkaraoke-status",
       jobId: job.jobId,
@@ -415,7 +415,7 @@ function postDownloadToHost(job) {
         videoId: job.videoId || "",
         phase: "connect",
       });
-      failDeferredTimings(job.videoId, "Karaokize could not start, so lyric timings cannot be extracted.");
+      failDeferredTimings(job.videoId, "Karaoke Machine! could not start, so lyric timings cannot be extracted.");
       sendToTab(job.tabId, {
         type: "dkaraoke-status",
         jobId: job.jobId,

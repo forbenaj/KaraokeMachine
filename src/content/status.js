@@ -18,16 +18,17 @@ function setProcessProgress(value = null) {
 function setProcessStatus(message, state = "idle", progress = null) {
   const status = document.getElementById(STATUS_ID);
   if (!status) return;
-  status.textContent = message;
+  const localized = localizeMessage(message);
+  status.textContent = localized;
   status.dataset.state = state;
-  if (!isProgressDebugMessage(message)) appendDebugLog("karaokize", state, message, { progress });
+  if (!isProgressDebugMessage(localized)) appendDebugLog("karaokize", state, localized, { progress });
   setProcessProgress(progress);
 }
 
 function setProcessing(nextProcessing) {
   processing = nextProcessing;
   setDebugJobProcess(activeJobId || "karaokize", "karaokize", processing, {
-    message: processing ? "Karaokize active" : "Karaokize idle",
+    message: processing ? t("karaokizeActive") : t("karaokizeIdle"),
   });
   setProcessProgress();
   updateLyricsProcessButtons();
@@ -41,10 +42,10 @@ function checkSavedResults() {
   karaokizeAvailable = false;
   const jobId = crypto.randomUUID();
   cacheCheckJobId = jobId;
-  setMonitorActivity(jobId, "cache", "Checking cache...");
-  setDebugJobProcess(jobId, "cache", true, { message: "Checking saved results..." });
+  setMonitorActivity(jobId, "cache", t("cacheChecking"));
+  setDebugJobProcess(jobId, "cache", true, { message: t("savedChecking") });
   setProcessing(false);
-  setProcessStatus("Checking saved karaoke results...", "busy");
+  setProcessStatus(t("savedChecking"), "busy");
   chrome.runtime.sendMessage({
     type: "dkaraoke-check-cache",
     jobId,
@@ -61,7 +62,7 @@ function checkSavedResults() {
       cacheCheckComplete = true;
       karaokizeAvailable = true;
       setProcessing(false);
-      setProcessStatus(error || "Could not check saved results. Karaokize is still available.", "info");
+      setProcessStatus(error || t("cacheCheckFailedStillAvailable"), "info");
     }
   });
 }

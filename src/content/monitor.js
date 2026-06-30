@@ -39,11 +39,11 @@ function updatePlaybackMonitor() {
   const busy = hasActivity || processing || !cacheCheckComplete;
   const prompt = Boolean(cacheCheckComplete && karaokizeAvailable && !processing && !hasActivity);
   if (!messages.length) {
-    if (busy) messages.push("Loading...");
-    else if (prompt) messages.push("Press me!");
-    else if (playing) messages.push("Playing");
-    else if (paused) messages.push("Pause");
-    else messages.push("Ready!");
+    if (busy) messages.push(t("loading"));
+    else if (prompt) messages.push(t("pressMe"));
+    else if (playing) messages.push(t("playing"));
+    else if (paused) messages.push(t("pause"));
+    else messages.push(t("readyBang"));
   }
   status.textContent = messages.join("; ");
   const monitorState = busy ? "busy" : prompt ? "prompt" : playing ? "playing" : paused ? "paused" : "ready";
@@ -55,10 +55,10 @@ function updatePlaybackMonitor() {
   );
   monitor.setAttribute("aria-label", status.textContent);
   monitor.title = prompt
-    ? "Press me to Karaokize this song."
+    ? t("pressMeTitle")
     : busy
-      ? "Karaoke preparation is in progress."
-      : "This song is already Karaokized.";
+      ? t("preparationInProgress")
+      : t("alreadyPrepared");
   monitor.disabled = busy || !prompt;
   monitor.classList.toggle("is-prompt", prompt);
   monitor.classList.toggle("is-playing", !busy && !prompt && playing);
@@ -105,15 +105,15 @@ function updateMonitorFromBackend(message) {
     return message.status === "monitorStart" || message.status === "monitorEnd";
   }
   if (message.status === "monitorStart") {
-    setMonitorActivity(message.jobId, phase || "task", message.message || "Processing...");
+    setMonitorActivity(message.jobId, phase || "task", localizeMessage(message.message || t("processing")));
     return true;
   }
   if (message.status === "monitorEnd") {
     setMonitorActivity(message.jobId, phase || "task", "");
     return true;
   }
-  if (phase === "download") setMonitorActivity(message.jobId, "audio", "Downloading...");
-  else if (["convert", "separate"].includes(phase)) setMonitorActivity(message.jobId, "audio", "Extracting...");
+  if (phase === "download") setMonitorActivity(message.jobId, "audio", t("monitorDownloading"));
+  else if (["convert", "separate"].includes(phase)) setMonitorActivity(message.jobId, "audio", t("monitorExtracting"));
   if (message.status === "stemsReady") setMonitorActivity(message.jobId, "audio", "");
   if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"].includes(message.status)) {
     clearMonitorJob(message.jobId);

@@ -2,6 +2,7 @@ function normalizeSettings(value = {}) {
   return {
     ...DEFAULT_SETTINGS,
     ...value,
+    language: normalizeLanguage(value.language),
     latencyMs: clampNumber(value.latencyMs, -1000, 1000, DEFAULT_SETTINGS.latencyMs),
     lyricsLatencyMs: clampNumber(value.lyricsLatencyMs, -1000, 1000, DEFAULT_SETTINGS.lyricsLatencyMs),
     timingExtractionMethod: normalizeTimingMethod(value.timingExtractionMethod),
@@ -53,6 +54,7 @@ function persistPlaybackState() {
 function updateSettingsModalControls() {
   const modal = document.getElementById(SETTINGS_MODAL_ID);
   if (!modal) return;
+  const language = modal.querySelector("#dkaraoke-setting-language");
   const latency = modal.querySelector("#dkaraoke-setting-latency");
   const lyricsLatency = modal.querySelector("#dkaraoke-setting-lyrics-latency");
   const timingMethod = modal.querySelector(`#${TIMING_METHOD_ID}`);
@@ -64,6 +66,7 @@ function updateSettingsModalControls() {
   const vocals = modal.querySelector("#dkaraoke-default-vocals");
   const lyrics = modal.querySelector("#dkaraoke-default-lyrics");
   const debug = modal.querySelector(`#${DEBUG_ENABLED_ID}`);
+  if (language) language.value = settings.language;
   if (latency) latency.value = String(settings.latencyMs);
   if (lyricsLatency) lyricsLatency.value = String(settings.lyricsLatencyMs);
   if (timingMethod) timingMethod.value = settings.timingExtractionMethod;
@@ -121,19 +124,19 @@ function makeSettingSelect(id, label, options, value, normalize, handler) {
 
 function ensureSettingsModal() {
   let modal = document.getElementById(SETTINGS_MODAL_ID);
-  if (modal) return modal;
+  if (modal) modal.remove();
 
   modal = document.createElement("dialog");
   modal.id = SETTINGS_MODAL_ID;
-  modal.setAttribute("aria-label", "DKaraoKe settings");
+  modal.setAttribute("aria-label", t("settingsAria"));
 
   const header = document.createElement("div");
   header.className = "dkaraoke-modal-header";
   const title = document.createElement("strong");
-  title.textContent = "Settings";
+  title.textContent = t("settings");
   const close = document.createElement("button");
   close.type = "button";
-  close.textContent = "Close";
+  close.textContent = t("close");
   close.addEventListener("click", () => modal.close());
   header.append(title, close);
 
@@ -141,13 +144,25 @@ function ensureSettingsModal() {
   body.className = "dkaraoke-settings-body";
 
   body.append(
-    makeSettingNumber("dkaraoke-setting-latency", "Latency compensation (ms)", settings.latencyMs, (value) => {
+    makeSettingSelect(
+      "dkaraoke-setting-language",
+      t("language"),
+      Object.entries(LANGUAGE_LABELS),
+      settings.language,
+      normalizeLanguage,
+      (value) => {
+        settings.language = value;
+        saveSettings();
+        refreshLocalizedUI();
+      },
+    ),
+    makeSettingNumber("dkaraoke-setting-latency", t("latencyCompensation"), settings.latencyMs, (value) => {
       settings.latencyMs = value;
       saveSettings();
       syncCustomAudio(true);
       updateSettingsModalControls();
     }),
-    makeSettingNumber("dkaraoke-setting-lyrics-latency", "Lyrics timing offset (ms)", settings.lyricsLatencyMs, (value) => {
+    makeSettingNumber("dkaraoke-setting-lyrics-latency", t("lyricsTimingOffset"), settings.lyricsLatencyMs, (value) => {
       settings.lyricsLatencyMs = value;
       saveSettings();
       renderedLyricSegment = null;
@@ -158,15 +173,15 @@ function ensureSettingsModal() {
   const timing = document.createElement("fieldset");
   timing.className = "dkaraoke-settings-section";
   const timingLegend = document.createElement("legend");
-  timingLegend.textContent = "Timing extraction";
+  timingLegend.textContent = t("timingExtraction");
   timing.append(
     timingLegend,
     makeSettingSelect(
       TIMING_METHOD_ID,
-      "Method",
+      t("method"),
       [
-        ["ctc", "Current (CTC forced alignment)"],
-        ["silero-vad", "Silero VAD"],
+        ["ctc", t("currentCtc")],
+        ["silero-vad", t("sileroVad")],
       ],
       settings.timingExtractionMethod,
       normalizeTimingMethod,
@@ -178,10 +193,10 @@ function ensureSettingsModal() {
     ),
     makeSettingSelect(
       TIMING_SOURCE_ID,
-      "Audio source",
+      t("audioSource"),
       [
-        ["original", "Original audio"],
-        ["vocal-stem", "Vocal stem"],
+        ["original", t("originalAudio")],
+        ["vocal-stem", t("vocalStem")],
       ],
       settings.timingExtractionSource,
       normalizeTimingSource,
@@ -193,11 +208,11 @@ function ensureSettingsModal() {
     ),
     makeSettingSelect(
       TIMING_SCHEDULE_ID,
-      "Press me order",
+      t("pressMeOrder"),
       [
-        ["stems-first", "Stems first"],
-        ["lyrics-first", "Lyrics first"],
-        ["parallel", "Run together"],
+        ["stems-first", t("stemsFirst")],
+        ["lyrics-first", t("lyricsFirst")],
+        ["parallel", t("runTogether")],
       ],
       settings.timingPipelineSchedule,
       normalizeTimingSchedule,
@@ -212,7 +227,7 @@ function ensureSettingsModal() {
   const defaults = document.createElement("fieldset");
   defaults.className = "dkaraoke-settings-section dkaraoke-settings-defaults";
   const legend = document.createElement("legend");
-  legend.textContent = "Default state";
+  legend.textContent = t("defaultState");
   const keepLabel = document.createElement("label");
   const keepInput = document.createElement("input");
   keepInput.id = "dkaraoke-default-keep";
@@ -225,7 +240,7 @@ function ensureSettingsModal() {
     persistPlaybackState();
     updateSettingsModalControls();
   });
-  keepLabel.append(keepInput, document.createTextNode("Keep across songs"));
+  keepLabel.append(keepInput, document.createTextNode(t("keepAcrossSongs")));
 
   const resetLabel = document.createElement("label");
   const resetInput = document.createElement("input");
@@ -239,14 +254,14 @@ function ensureSettingsModal() {
     applyPlaybackState(defaultPlaybackState());
     updateSettingsModalControls();
   });
-  resetLabel.append(resetInput, document.createTextNode("Always reset to:"));
+  resetLabel.append(resetInput, document.createTextNode(t("alwaysResetTo")));
 
   const resetOptions = document.createElement("div");
   resetOptions.className = "dkaraoke-reset-options";
   for (const [id, label, key] of [
-    ["dkaraoke-default-instrumental", "Instrumental", "defaultInstrumental"],
-    ["dkaraoke-default-vocals", "Vocals", "defaultVocals"],
-    ["dkaraoke-default-lyrics", "Lyrics", "defaultLyrics"],
+    ["dkaraoke-default-instrumental", t("instrumental"), "defaultInstrumental"],
+    ["dkaraoke-default-vocals", t("vocals"), "defaultVocals"],
+    ["dkaraoke-default-lyrics", t("lyrics"), "defaultLyrics"],
   ]) {
     const optionLabel = document.createElement("label");
     const input = document.createElement("input");
@@ -267,7 +282,7 @@ function ensureSettingsModal() {
   const diagnostics = document.createElement("fieldset");
   diagnostics.className = "dkaraoke-settings-section";
   const diagnosticsLegend = document.createElement("legend");
-  diagnosticsLegend.textContent = "Diagnostics";
+  diagnosticsLegend.textContent = t("diagnostics");
   const debugLabel = document.createElement("label");
   debugLabel.className = "dkaraoke-debug-toggle";
   const debugInput = document.createElement("input");
@@ -279,7 +294,7 @@ function ensureSettingsModal() {
     renderDebugPanel();
     updateSettingsModalControls();
   });
-  debugLabel.append(debugInput, document.createTextNode("Debug console"));
+  debugLabel.append(debugInput, document.createTextNode(t("debugConsole")));
   diagnostics.append(diagnosticsLegend, debugLabel);
 
   body.appendChild(timing);

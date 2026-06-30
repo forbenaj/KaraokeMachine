@@ -1,13 +1,13 @@
 const DEBUG_PROCESS_DEFINITIONS = [
-  ["cache", "Cache"],
-  ["queue", "Queue"],
-  ["karaokize", "Karaokize"],
-  ["download", "Download"],
-  ["separate", "Separate"],
-  ["convert", "Convert"],
-  ["lyricsSearch", "LRCLIB"],
-  ["lyricsTiming", "Timing"],
-  ["audioLoad", "Audio"],
+  ["cache", "processCache"],
+  ["queue", "processQueue"],
+  ["karaokize", "processKaraokize"],
+  ["download", "processDownload"],
+  ["separate", "processSeparate"],
+  ["convert", "processConvert"],
+  ["lyricsSearch", "processLrclib"],
+  ["lyricsTiming", "processTiming"],
+  ["audioLoad", "processAudio"],
 ];
 const DEBUG_PHASE_KEYS = new Set(["cache", "download", "separate", "convert", "lyricsSearch", "lyricsTiming"]);
 const DEBUG_TERMINAL_STATUSES = new Set(["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"]);
@@ -67,7 +67,8 @@ function recordDiagnostic(level, event, message, details = {}) {
 }
 
 function debugProcessLabel(key) {
-  return DEBUG_PROCESS_DEFINITIONS.find(([processKey]) => processKey === key)?.[1] || key || "Event";
+  const labelKey = DEBUG_PROCESS_DEFINITIONS.find(([processKey]) => processKey === key)?.[1];
+  return labelKey ? t(labelKey) : key || t("event");
 }
 
 function isProgressDebugMessage(message) {
@@ -116,15 +117,15 @@ function renderDebugPanel() {
   if (!panel) {
     panel = document.createElement("section");
     panel.id = DEBUG_PANEL_ID;
-    panel.setAttribute("aria-label", "DKaraoKe debug log");
+    panel.setAttribute("aria-label", t("debugLogAria"));
 
     const header = document.createElement("div");
     header.className = "dkaraoke-debug-header";
     const title = document.createElement("strong");
-    title.textContent = "DKaraoKe debug";
+    title.textContent = t("debugTitle");
     const meta = document.createElement("span");
     meta.className = "dkaraoke-debug-meta";
-    meta.textContent = "Live process trace";
+    meta.textContent = t("liveProcessTrace");
     header.append(title, meta);
 
     const indicators = document.createElement("div");
@@ -140,16 +141,21 @@ function renderDebugPanel() {
   } else if (panel.previousElementSibling !== aboveFold) {
     aboveFold.insertAdjacentElement("afterend", panel);
   }
+  const headerTitle = panel.querySelector(".dkaraoke-debug-header strong");
+  if (headerTitle) headerTitle.textContent = t("debugTitle");
+  const headerMeta = panel.querySelector(".dkaraoke-debug-meta");
+  if (headerMeta) headerMeta.textContent = t("liveProcessTrace");
 
   const active = debugActiveKeys();
   const indicators = panel.querySelector(`#${DEBUG_INDICATORS_ID}`);
   if (indicators) {
-    indicators.replaceChildren(...DEBUG_PROCESS_DEFINITIONS.map(([key, label]) => {
+    indicators.replaceChildren(...DEBUG_PROCESS_DEFINITIONS.map(([key]) => {
+      const label = debugProcessLabel(key);
       const item = document.createElement("span");
       item.className = "dkaraoke-debug-indicator";
       item.dataset.process = key;
       item.dataset.active = String(active.has(key));
-      item.title = `${label}: ${active.has(key) ? "active" : "idle"}`;
+      item.title = `${label}: ${active.has(key) ? t("active") : t("idle")}`;
       const square = document.createElement("span");
       square.className = "dkaraoke-debug-square";
       const text = document.createElement("span");
@@ -226,7 +232,7 @@ function setDebugExclusiveJobPhase(jobId, process, details = {}) {
   const previous = debugCurrentPhaseByJob.get(jobId);
   if (previous && previous !== process) {
     setDebugJobProcess(jobId, previous, false, {
-      message: `${debugProcessLabel(previous)} finished.`,
+      message: t("phaseFinished", { phase: debugProcessLabel(previous) }),
     });
   }
   debugCurrentPhaseByJob.set(jobId, process);
@@ -262,7 +268,7 @@ function recordBackendDebug(message) {
     jobId: message.jobId,
     phase: message.phase || "",
     progress: message.progress,
-    message: message.message || message.status || "Backend update",
+    message: localizeMessage(message.message || message.status || "Backend update"),
   };
 
   if (process && !terminal && message.status !== "stemsReady") {
@@ -291,13 +297,14 @@ function recordBackendDebug(message) {
 
 function recordQueueDebug(nextItems) {
   const queueDebugMessage = (item) => {
-    if (!item) return "Queue updated";
-    if (item.status === "queued") return `Queued: ${item.title || "YouTube song"}`;
-    if (item.phase === "download") return `Running download: ${item.title || "YouTube song"}`;
-    if (item.phase === "separate") return `Running separation: ${item.title || "YouTube song"}`;
-    if (item.phase === "convert") return `Running conversion: ${item.title || "YouTube song"}`;
-    if (item.phase === "connect") return `Connecting: ${item.title || "YouTube song"}`;
-    return `${item.status || "running"}: ${item.title || "YouTube song"}`;
+    const title = item?.title || t("youtubeSong");
+    if (!item) return t("queueUpdated");
+    if (item.status === "queued") return t("queuedTitle", { title });
+    if (item.phase === "download") return t("runningDownloadTitle", { title });
+    if (item.phase === "separate") return t("runningSeparationTitle", { title });
+    if (item.phase === "convert") return t("runningConversionTitle", { title });
+    if (item.phase === "connect") return t("connectingTitle", { title });
+    return t("statusTitle", { status: item.status || "running", title });
   };
   const signature = (nextItems || [])
     .map((item) => `${item.jobId}:${item.status}:${item.phase}:${item.position || ""}:${item.count || ""}`)
@@ -307,10 +314,10 @@ function recordQueueDebug(nextItems) {
     appendDebugLog(
       "queue",
       nextItems.length ? "active" : "idle",
-      nextItems.length ? queueDebugMessage(current) : "Queue empty",
+      nextItems.length ? queueDebugMessage(current) : t("queueEmpty"),
     );
   }
-  if (!signature && debugQueueSignature) appendDebugLog("queue", "idle", "Queue empty");
+  if (!signature && debugQueueSignature) appendDebugLog("queue", "idle", t("queueEmpty"));
   debugQueueSignature = signature;
   renderDebugPanel();
 }

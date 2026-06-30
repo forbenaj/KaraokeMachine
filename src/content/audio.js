@@ -10,8 +10,8 @@ function updateStemButtons() {
     button.classList.toggle("is-active", stemEnabled[stem]);
     button.setAttribute("aria-pressed", String(stemEnabled[stem]));
     button.title = customAudioReady
-      ? `${stemEnabled[stem] ? "Disable" : "Enable"} ${stem}.`
-      : "Karaokize this song to enable separated audio.";
+      ? t(stemEnabled[stem] ? "disableStemTitle" : "enableStemTitle", { stem: stemLabel(stem) })
+      : t("prepareForAudioTitle");
   }
 }
 
@@ -46,7 +46,7 @@ function activeCustomAudio() {
 
 function setSourceMode(nextMode, userInitiated = false) {
   if (nextMode !== "original" && !customAudioReady) {
-    setProcessStatus("Karaokize this song before switching audio.", "info");
+    setProcessStatus(t("prepareBeforeSwitching"), "info");
     return;
   }
 
@@ -63,7 +63,7 @@ function setSourceMode(nextMode, userInitiated = false) {
   }
 
   if (!syncedVideo) {
-    setProcessStatus("YouTube's player is not ready yet.", "error");
+    setProcessStatus(t("youtubeNotReady"), "error");
     return;
   }
 
@@ -91,10 +91,10 @@ function applyStemSelection(userInitiated = false) {
   const count = STEMS.filter((stem) => stemEnabled[stem]).length;
   setSourceMode(count === 2 ? "original" : count === 1 ? "custom" : "silent", userInitiated);
   const message = count === 2
-    ? "Using original YouTube audio."
+    ? t("usingOriginalAudio")
     : count === 1
-      ? `Using synchronized ${stemEnabled.instrumental ? "instrumental" : "vocals"}.`
-      : "Both stems are off.";
+      ? t("usingStem", { stem: stemLabel(stemEnabled.instrumental ? "instrumental" : "vocals") })
+      : t("bothStemsOff");
   setProcessStatus(message, count ? "success" : "info");
 }
 
@@ -178,8 +178,8 @@ function playCustomAudio(userInitiated = false) {
       setSourceMode("original");
       setProcessStatus(
         userInitiated
-          ? "The separated audio could not start. Toggle a stem to try again."
-          : "Separated audio is ready. Toggle a stem to switch from original audio.",
+          ? t("separatedCouldNotStartRetry")
+          : t("separatedReadyToggle"),
         "info"
       );
     });
@@ -297,11 +297,11 @@ function discardCustomAudio() {
   updateStemButtons();
 }
 
-function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchronizing instrumental...") {
+function prepareCustomAudio(urls, readyMessage = t("separatedAudioReadySync")) {
   discardCustomAudio();
   const debugJobId = activeJobId || "audio-load";
   setDebugJobProcess(debugJobId, "audioLoad", true, {
-    message: "Loading separated audio in the page...",
+    message: t("loadingSeparatedAudioPage"),
   });
   const ready = new Set();
   for (const stem of STEMS) {
@@ -319,7 +319,7 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
       customAudioReady = true;
       playBlocked = false;
       setDebugJobProcess(debugJobId, "audioLoad", false, {
-        message: "Separated audio loaded in the page.",
+        message: t("separatedAudioLoadedPage"),
       });
       updateStemButtons();
       setProcessStatus(readyMessage, "success");
@@ -336,20 +336,20 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
           || syncedVideo?.seeking
           || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
         ) return;
-        recordDiagnostic("warning", "custom_audio_interrupted", `The ${stem} stem was interrupted.`, {
+        recordDiagnostic("warning", "custom_audio_interrupted", t("separatedInterrupted"), {
           stem,
           readyState: audio.readyState,
           networkState: audio.networkState,
         });
         stemEnabled = { instrumental: true, vocals: true };
         setSourceMode("original");
-        setProcessStatus("Separated audio was interrupted. Using original YouTube audio.", "info");
+        setProcessStatus(t("separatedInterrupted"), "info");
       }, 750);
     });
     audio.addEventListener("playing", clearCustomAudioInterruptionTimer);
     audio.addEventListener("ended", () => {
       if (customAudio[stem] !== audio || sourceMode !== "custom" || !syncedVideo || syncedVideo.ended) return;
-      recordDiagnostic("error", "custom_audio_ended_early", `The ${stem} stem ended before YouTube ended.`, {
+      recordDiagnostic("error", "custom_audio_ended_early", t("separatedEndedEarly"), {
         stem,
         audioDuration: audio.duration,
         audioTime: audio.currentTime,
@@ -358,12 +358,12 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
       });
       stemEnabled = { instrumental: true, vocals: true };
       setSourceMode("original");
-      setProcessStatus("Separated audio ended early. Using original YouTube audio.", "error");
+      setProcessStatus(t("separatedEndedEarly"), "error");
     });
     audio.addEventListener("error", () => {
       if (customAudio[stem] !== audio) return;
       customAudioReady = false;
-      recordDiagnostic("error", "custom_audio_load_failed", `The ${stem} track failed to load.`, {
+      recordDiagnostic("error", "custom_audio_load_failed", t("stemTrackFailedLoad", { stem: stemLabel(stem) }), {
         stem,
         errorCode: audio.error?.code ?? "",
         errorMessage: audio.error?.message || "",
@@ -371,11 +371,11 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
         readyState: audio.readyState,
       });
       setDebugJobProcess(debugJobId, "audioLoad", false, {
-        message: `The ${stem} track failed to load.`,
+        message: t("stemTrackFailedLoad", { stem: stemLabel(stem) }),
       });
       setSourceMode("original");
       updateStemButtons();
-      setProcessStatus(`The ${stem} track could not be loaded from the backend.`, "error");
+      setProcessStatus(t("stemTrackBackendFailed", { stem: stemLabel(stem) }), "error");
     });
     document.documentElement.appendChild(audio);
     audio.load();

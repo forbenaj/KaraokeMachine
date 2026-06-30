@@ -22,10 +22,11 @@ function ensureLyricsOverlay() {
 function setLyricsStatus(message, state = "idle") {
   const status = document.getElementById(LYRICS_STATUS_ID);
   if (!status) return;
-  status.textContent = message;
+  const localized = localizeMessage(message);
+  status.textContent = localized;
   status.dataset.state = state;
-  if (!isProgressDebugMessage(message)) {
-    appendDebugLog(lyricsSearchJobId ? "lyricsSearch" : "lyricsTiming", state, message);
+  if (!isProgressDebugMessage(localized)) {
+    appendDebugLog(lyricsSearchJobId ? "lyricsSearch" : "lyricsTiming", state, localized);
   }
 }
 
@@ -284,7 +285,9 @@ function updateLyricsButton() {
   button.disabled = !lyricsReady;
   button.classList.toggle("is-active", lyricsEnabled && lyricsReady);
   button.setAttribute("aria-pressed", String(lyricsEnabled && lyricsReady));
-  button.title = lyricsReady ? `${lyricsEnabled ? "Hide" : "Show"} synchronized lyrics.` : "Add or load lyrics, then Karaokize.";
+  button.title = lyricsReady
+    ? t(lyricsEnabled ? "hideLyricsTitle" : "showLyricsTitle")
+    : t("addLyricsTitle");
 }
 
 function updateLyricsProcessButtons() {
@@ -293,11 +296,11 @@ function updateLyricsProcessButtons() {
   const hasText = Boolean(document.getElementById(LYRICS_TEXT_ID)?.value.trim() || lyricsText.trim());
   if (searchButton) {
     searchButton.disabled = Boolean(lyricsSearchJobId) || timingsProcessing;
-    searchButton.textContent = lyricsSearchJobId ? "Searching LRCLIB..." : "Search LRCLIB";
+    searchButton.textContent = lyricsSearchJobId ? t("searchingLrclib") : t("searchLrclib");
   }
   if (timingsButton) {
     timingsButton.disabled = timingsProcessing || Boolean(lyricsSearchJobId) || !hasText;
-    timingsButton.textContent = timingsProcessing ? "Extracting timings..." : "Extract timings";
+    timingsButton.textContent = timingsProcessing ? t("extractingTimings") : t("extractTimings");
   }
 }
 function startLyricsRendering() {
@@ -343,9 +346,9 @@ function searchLrclibLyrics() {
   if (!videoId || lyricsSearchJobId) return;
   const jobId = crypto.randomUUID();
   lyricsSearchJobId = jobId;
-  setDebugJobProcess(jobId, "lyricsSearch", true, { message: "Searching LRCLIB..." });
+  setDebugJobProcess(jobId, "lyricsSearch", true, { message: t("searchingLrclib") });
   updateLyricsProcessButtons();
-  setLyricsStatus("Searching LRCLIB...", "busy");
+  setLyricsStatus(t("searchingLrclib"), "busy");
   chrome.runtime.sendMessage({
     type: "dkaraoke-search-lrclib",
     jobId,
@@ -363,7 +366,7 @@ function searchLrclibLyrics() {
       markJobFinished(jobId);
       clearDebugJob(jobId);
       updateLyricsProcessButtons();
-      setLyricsStatus(error || "LRCLIB search failed. You can enter lyrics manually.", "info");
+      setLyricsStatus(error || t("lrclibSearchFailedManual"), "info");
     }
   });
 }
@@ -372,22 +375,22 @@ function extractLyricsTimings() {
   if (timingsProcessing) return;
   const text = document.getElementById(LYRICS_TEXT_ID)?.value.trim() || "";
   if (!text) {
-    setLyricsStatus("Enter or find lyrics before extracting timings.", "info");
+    setLyricsStatus(t("enterLyricsBeforeExtracting"), "info");
     return;
   }
   timingsProcessing = true;
   const jobId = crypto.randomUUID();
   timingsJobId = jobId;
   setDebugJobProcess(jobId, "lyricsTiming", true, {
-    message: "Starting lyric timing extraction...",
+    message: t("startingTiming"),
   });
   updateLyricsProcessButtons();
   setProcessing(processing);
   const timingMethod = normalizeTimingMethod(settings.timingExtractionMethod);
   const timingSource = normalizeTimingSource(settings.timingExtractionSource);
-  const methodLabel = TIMING_METHOD_LABELS[timingMethod] || TIMING_METHOD_LABELS[DEFAULT_TIMING_METHOD];
-  const sourceLabel = TIMING_SOURCE_LABELS[timingSource] || TIMING_SOURCE_LABELS[DEFAULT_TIMING_SOURCE];
-  setLyricsStatus(`Extracting timings with ${methodLabel} from ${sourceLabel}...`, "busy");
+  const methodLabel = timingMethodLabel(timingMethod);
+  const sourceLabel = timingSourceLabel(timingSource);
+  setLyricsStatus(t("extractingWith", { method: methodLabel, source: sourceLabel }), "busy");
   chrome.runtime.sendMessage({
     type: "dkaraoke-extract-lyrics-timings",
     jobId,
@@ -410,7 +413,7 @@ function extractLyricsTimings() {
       clearDebugJob(jobId);
       updateLyricsProcessButtons();
       setProcessing(processing);
-      setLyricsStatus(error || "Could not extract lyric timings.", "error");
+      setLyricsStatus(error || t("couldNotExtractTimings"), "error");
     }
   });
 }
@@ -426,17 +429,17 @@ function prepareKaraokizeLyricsTiming() {
   const jobId = crypto.randomUUID();
   timingsJobId = jobId;
   setDebugJobProcess(jobId, "lyricsTiming", true, {
-    message: "Queued lyric timing with Karaokize...",
+    message: t("queuedTimingWithPrepare"),
   });
   updateLyricsProcessButtons();
   setProcessing(processing);
   const timingMethod = normalizeTimingMethod(settings.timingExtractionMethod);
-  const methodLabel = TIMING_METHOD_LABELS[timingMethod] || TIMING_METHOD_LABELS[DEFAULT_TIMING_METHOD];
-  const scheduleLabel = TIMING_SCHEDULE_LABELS[timingSchedule] || TIMING_SCHEDULE_LABELS[DEFAULT_TIMING_SCHEDULE];
+  const methodLabel = timingMethodLabel(timingMethod);
+  const scheduleLabel = timingScheduleLabel(timingSchedule);
   setLyricsStatus(
     text
-      ? `Will extract timings with ${methodLabel} ${scheduleLabel}...`
-      : `Will find lyrics, then extract timings with ${methodLabel} ${scheduleLabel}...`,
+      ? t("willExtractTimings", { method: methodLabel, schedule: scheduleLabel })
+      : t("willFindThenExtract", { method: methodLabel, schedule: scheduleLabel }),
     "busy",
   );
   return {

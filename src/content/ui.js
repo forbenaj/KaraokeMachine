@@ -24,7 +24,7 @@ function mountKaraokeMenu() {
   if (!document.getElementById(LEFT_PANEL_ID)) {
     leftPanel = document.createElement("aside");
     leftPanel.id = LEFT_PANEL_ID;
-    leftPanel.setAttribute("aria-label", "Karaoke playback controls");
+    leftPanel.setAttribute("aria-label", t("controlsAria"));
 
     const monitor = document.createElement("div");
     monitor.className = "dkaraoke-monitor-frame";
@@ -47,7 +47,7 @@ function mountKaraokeMenu() {
     monitorText.className = "dkaraoke-visually-hidden";
     monitorText.setAttribute("role", "status");
     monitorText.setAttribute("aria-live", "polite");
-    monitorText.textContent = "wait...";
+    monitorText.textContent = t("loading");
     monitor.append(star, display, monitorText);
     leftPanel.appendChild(monitor);
     columns.insertBefore(leftPanel, primary);
@@ -56,7 +56,7 @@ function mountKaraokeMenu() {
   if (!document.getElementById(RIGHT_PANEL_ID)) {
     rightPanel = document.createElement("aside");
     rightPanel.id = RIGHT_PANEL_ID;
-    rightPanel.setAttribute("aria-label", "Karaoke lyrics editor");
+    rightPanel.setAttribute("aria-label", t("lyricsEditorAria"));
     rightRail.appendChild(rightPanel);
   }
 
@@ -73,21 +73,21 @@ function mountKaraokeMenu() {
   if (!document.getElementById(MENU_ID)) {
     menu = document.createElement("section");
     menu.id = MENU_ID;
-    menu.setAttribute("aria-label", "Karaoke controls");
+    menu.setAttribute("aria-label", t("controlsSectionAria"));
 
     const header = document.createElement("div");
     header.className = "dkaraoke-menu-header";
-    header.innerHTML = "<strong>Karaoke studio</strong><span>Audio preparation</span>";
+    header.innerHTML = `<strong>${t("studioTitle")}</strong><span>${t("audioPreparation")}</span>`;
 
     const instruments = document.createElement("div");
     instruments.className = "dkaraoke-instruments";
-    instruments.setAttribute("aria-label", "Separated audio tracks");
+    instruments.setAttribute("aria-label", t("separatedTracksAria"));
 
     for (const stem of STEMS) {
       const toggle = document.createElement("button");
       toggle.id = `dkaraoke-${stem}`;
       toggle.type = "button";
-      toggle.textContent = stem === "vocals" ? "Vocals" : "Instrumental";
+      toggle.textContent = stemLabel(stem);
       toggle.disabled = true;
       toggle.addEventListener("click", () => toggleStem(stem));
       instruments.appendChild(toggle);
@@ -99,27 +99,27 @@ function mountKaraokeMenu() {
     lyricsHeading.className = "dkaraoke-lyrics-heading";
     const lyricsLabel = document.createElement("label");
     lyricsLabel.htmlFor = LYRICS_TEXT_ID;
-    lyricsLabel.textContent = "LYRICS";
+    lyricsLabel.textContent = t("lyricsUpper");
     const lyricsStatus = document.createElement("p");
     lyricsStatus.id = LYRICS_STATUS_ID;
     lyricsStatus.dataset.state = "idle";
     lyricsStatus.setAttribute("aria-live", "polite");
-    lyricsStatus.textContent = "Search LRCLIB or enter lyrics, then extract timings.";
+    lyricsStatus.textContent = t("lyricsInitialStatus");
     lyricsHeading.append(lyricsLabel, lyricsStatus);
 
     const searchButton = document.createElement("button");
     searchButton.id = LRCLIB_SEARCH_ID;
     searchButton.type = "button";
-    searchButton.textContent = "Search LRCLIB";
+    searchButton.textContent = t("searchLrclib");
     searchButton.addEventListener("click", searchLrclibLyrics);
     const timingsButton = document.createElement("button");
     timingsButton.id = EXTRACT_TIMINGS_ID;
     timingsButton.type = "button";
-    timingsButton.textContent = "Extract timings";
+    timingsButton.textContent = t("extractTimings");
     timingsButton.addEventListener("click", extractLyricsTimings);
     const lyricsTextarea = document.createElement("textarea");
     lyricsTextarea.id = LYRICS_TEXT_ID;
-    lyricsTextarea.placeholder = "LRCLIB lyrics will appear here. You can also paste or type lyrics.";
+    lyricsTextarea.placeholder = t("lyricsPlaceholder");
     lyricsTextarea.value = lyricsText;
     lyricsTextarea.addEventListener("input", () => {
       lyricsText = lyricsTextarea.value;
@@ -131,16 +131,16 @@ function mountKaraokeMenu() {
     const lyricsToggle = document.createElement("button");
     lyricsToggle.id = LYRICS_ID;
     lyricsToggle.type = "button";
-    lyricsToggle.textContent = "Lyrics";
+    lyricsToggle.textContent = t("lyrics");
     lyricsToggle.disabled = true;
     lyricsToggle.addEventListener("click", toggleLyrics);
 
     const styleLabel = document.createElement("label");
     styleLabel.htmlFor = LYRICS_STYLE_ID;
-    styleLabel.textContent = "Lyrics style";
+    styleLabel.textContent = t("lyricsStyle");
     const styleSelector = document.createElement("select");
     styleSelector.id = LYRICS_STYLE_ID;
-    for (const [value, label] of [["classic", "Classic"], ["arcade", "Arcade"], ["simple", "Simple"]]) {
+    for (const [value, label] of [["classic", t("styleClassic")], ["arcade", t("styleArcade")], ["simple", t("styleSimple")]]) {
       const option = document.createElement("option");
       option.value = value;
       option.textContent = label;
@@ -166,7 +166,7 @@ function mountKaraokeMenu() {
     status.id = STATUS_ID;
     status.dataset.state = "idle";
     status.setAttribute("aria-live", "polite");
-    status.textContent = "Ready to prepare this song.";
+    status.textContent = t("readyToPrepare");
 
     const statusStack = document.createElement("div");
     statusStack.className = "dkaraoke-status-stack";
@@ -175,7 +175,7 @@ function mountKaraokeMenu() {
     progress.id = PROGRESS_ID;
     progress.hidden = true;
     progress.setAttribute("role", "progressbar");
-    progress.setAttribute("aria-label", "Karaokize progress");
+    progress.setAttribute("aria-label", t("karaokizeProgress"));
     progress.setAttribute("aria-valuemin", "0");
     progress.setAttribute("aria-valuemax", "100");
 
@@ -187,7 +187,7 @@ function mountKaraokeMenu() {
     const settingsButton = document.createElement("button");
     settingsButton.id = SETTINGS_BUTTON_ID;
     settingsButton.type = "button";
-    settingsButton.textContent = "Settings";
+    settingsButton.textContent = t("settings");
     settingsButton.addEventListener("click", openSettingsModal);
 
     actionRow.append(statusStack, settingsButton);
@@ -234,7 +234,7 @@ function applyState() {
   if (button) {
     button.classList.toggle("is-active", enabled);
     button.setAttribute("aria-pressed", String(enabled));
-    button.title = enabled ? "Close Karaoke mode" : "Open Karaoke mode";
+    button.title = enabled ? t("closeModeTitle") : t("openModeTitle");
   }
 
   if (!enabled) {
@@ -250,6 +250,65 @@ function applyState() {
     updatePlaybackMonitor();
     window.dispatchEvent(new Event("resize"));
   });
+}
+
+function refreshLocalizedUI() {
+  const modal = document.getElementById(SETTINGS_MODAL_ID);
+  const modalOpen = Boolean(modal?.open);
+  if (modal) modal.remove();
+
+  const leftPanel = document.getElementById(LEFT_PANEL_ID);
+  if (leftPanel) leftPanel.setAttribute("aria-label", t("controlsAria"));
+  const rightPanel = document.getElementById(RIGHT_PANEL_ID);
+  if (rightPanel) rightPanel.setAttribute("aria-label", t("lyricsEditorAria"));
+  const menu = document.getElementById(MENU_ID);
+  if (menu) menu.setAttribute("aria-label", t("controlsSectionAria"));
+  const header = menu?.querySelector(".dkaraoke-menu-header");
+  if (header) header.innerHTML = `<strong>${t("studioTitle")}</strong><span>${t("audioPreparation")}</span>`;
+  const instruments = menu?.querySelector(".dkaraoke-instruments");
+  if (instruments) instruments.setAttribute("aria-label", t("separatedTracksAria"));
+  for (const stem of STEMS) {
+    const button = document.getElementById(`dkaraoke-${stem}`);
+    if (button) button.textContent = stemLabel(stem);
+  }
+
+  const lyricsLabel = document.querySelector(`label[for="${LYRICS_TEXT_ID}"]`);
+  if (lyricsLabel) lyricsLabel.textContent = t("lyricsUpper");
+  const editor = document.getElementById(LYRICS_TEXT_ID);
+  if (editor) editor.placeholder = t("lyricsPlaceholder");
+  const lyricsButton = document.getElementById(LYRICS_ID);
+  if (lyricsButton) lyricsButton.textContent = t("lyrics");
+  const styleLabel = document.querySelector(`label[for="${LYRICS_STYLE_ID}"]`);
+  if (styleLabel) styleLabel.textContent = t("lyricsStyle");
+  const styleSelector = document.getElementById(LYRICS_STYLE_ID);
+  if (styleSelector) {
+    const selected = styleSelector.value;
+    styleSelector.replaceChildren();
+    for (const [value, label] of [["classic", t("styleClassic")], ["arcade", t("styleArcade")], ["simple", t("styleSimple")]]) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = label;
+      styleSelector.appendChild(option);
+    }
+    styleSelector.value = selected;
+  }
+
+  const progress = document.getElementById(PROGRESS_ID);
+  if (progress) progress.setAttribute("aria-label", t("karaokizeProgress"));
+  const settingsButton = document.getElementById(SETTINGS_BUTTON_ID);
+  if (settingsButton) settingsButton.textContent = t("settings");
+  const toggle = document.getElementById(BUTTON_ID);
+  if (toggle) toggle.setAttribute("aria-label", t("toggleModeAria"));
+
+  updateStemButtons();
+  updateLyricsButton();
+  updateLyricsProcessButtons();
+  updatePlaybackMonitor();
+  updateQueueUI();
+  renderDebugPanel();
+  applyState();
+
+  if (modalOpen) openSettingsModal();
 }
 
 function toggleMode() {
@@ -273,7 +332,7 @@ function mountControls() {
     button.id = BUTTON_ID;
     button.type = "button";
     button.textContent = "K";
-    button.setAttribute("aria-label", "Toggle Karaoke mode");
+    button.setAttribute("aria-label", t("toggleModeAria"));
     button.addEventListener("click", toggleMode);
     youtubeLogo.insertAdjacentElement("afterend", button);
   }
@@ -301,7 +360,7 @@ function queueMount() {
 function remountAfterNavigation() {
   monitorActivities.clear();
   debugProcessJobs.clear();
-  appendDebugLog("karaokize", "info", "YouTube navigation detected.");
+  appendDebugLog("karaokize", "info", t("navigationDetected"));
   processing = false;
   cacheCheckJobId = null;
   cacheCheckComplete = false;
@@ -317,7 +376,7 @@ function remountAfterNavigation() {
   youtubeLyrics = { text: "", segments: [], source: "none" };
   if (settings.defaultStateMode === "reset") applyPlaybackState(defaultPlaybackState());
   setLyrics(youtubeLyrics);
-  setProcessStatus("Checking saved karaoke results...", "busy");
+  setProcessStatus(t("savedChecking"), "busy");
   renderDebugPanel();
   mountAttempts = 0;
   queueMount();

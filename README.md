@@ -1,6 +1,6 @@
-# DKaraoKe for YouTube
+# Karaoke Machine! for YouTube
 
-DKaraoKe is a Windows-first Chrome MV3 extension with a local Python backend. It adds synchronized instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
+Karaoke Machine! is a Windows-first Chrome MV3 extension with a local Python backend. It adds synchronized instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
 
 ## Install
 
@@ -29,18 +29,18 @@ Chrome loads the extension directly from this directory. After changing extensio
 
 Press **K** beside the YouTube logo to open or close the karaoke workspace. On wide screens it places playback controls to the left of the video and the lyrics editor to the right.
 
-Whenever a song opens, DKaraoKe checks local results automatically:
+Whenever a song opens, Karaoke Machine! checks local results automatically:
 
 1. Cached local CTC-aligned lyrics and timing are loaded first.
 2. Cached LRCLIB lyrics and line timing are used if local aligned results do not exist.
 3. If both stems already exist, playback immediately switches to the instrumental stem.
 4. The **Monitor** shows a red jagged star and **Press me!** while stems are missing.
 
-Pressing the **Monitor** prepares the audio stems and starts the lyrics pipeline. DKaraoKe searches LRCLIB when the editor has no lyrics yet, then extracts refined timings using the configured timing source and Press me order.
+Pressing the **Monitor** prepares the audio stems and starts the lyrics pipeline. Karaoke Machine! searches LRCLIB when the editor has no lyrics yet, then extracts refined timings using the configured timing source and Press me order.
 
 The audio and lyrics pipelines are independently scheduled. LRCLIB search can
 run while audio is downloading or separating. If **Extract timings** is pressed
-while Karaokize is still preparing the same song and the timing source is the
+while Karaoke Machine! is still preparing the same song and the timing source is the
 vocal stem, the timing job waits for the stem and starts automatically when it
 becomes available. Original audio is the default timing source and can start
 without depending on stem extraction. To avoid GPU/CPU contention, Press me
@@ -68,7 +68,7 @@ The right section contains the lyrics editor. Its compact control section sits b
 
 Lyrics search, extraction, and timing messages appear in the lyrics header; the left monitor remains dedicated to audio preparation and playback.
 
-YouTube remains responsible for play, pause, seeking, playback speed, volume, buffering, ads, and navigation. DKaraoKe follows those changes and corrects small timing drift. If local stem playback is interrupted, it falls back to the original YouTube audio.
+YouTube remains responsible for play, pause, seeking, playback speed, volume, buffering, ads, and navigation. Karaoke Machine! follows those changes and corrects small timing drift. If local stem playback is interrupted, it falls back to the original YouTube audio.
 
 ## Processing and cache behavior
 
@@ -124,7 +124,7 @@ Watch it while processing:
 Get-Content "$env:LOCALAPPDATA\DKaraoKe\dkaraoke.log" -Wait
 ```
 
-DKaraoKe also appends warnings, errors, and recoverable oddities to a
+Karaoke Machine! also appends warnings, errors, and recoverable oddities to a
 human-readable diagnostics journal:
 
 ```text
@@ -133,7 +133,7 @@ human-readable diagnostics journal:
 
 Each line has a timestamp, severity, source, event, message, and safe context
 such as job ID, video ID, or phase. The journal records every warning/error
-diagnostic DKaraoKe emits; it is not limited to the visible debug panel or to
+diagnostic Karaoke Machine! emits; it is not limited to the visible debug panel or to
 the most recent entries. Cookies, native-message payloads, and local
 audio-server tokens are redacted.
 

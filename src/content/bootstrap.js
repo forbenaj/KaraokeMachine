@@ -59,19 +59,19 @@ chrome.runtime.onMessage.addListener((message) => {
         setLyrics(message.lyrics);
         setLyricsStatus(
           message.lyrics.segments?.length
-            ? "Saved synchronized lyrics ready."
-            : "Saved lyrics text ready. Extract timings to show it.",
+            ? t("savedLyricsSyncedReady")
+            : t("savedLyricsTextReady"),
           message.lyrics.segments?.length ? "success" : "info"
         );
       }
       if (message.hasStems && message.instrumentalUrl && message.vocalsUrl) {
         prepareCustomAudio(
           { instrumental: message.instrumentalUrl, vocals: message.vocalsUrl },
-          "Cached instrumental ready."
+          t("cachedInstrumentalReady")
         );
       } else {
         setProcessStatus(
-          message.hasLyrics ? "Saved lyrics ready. Karaokize to prepare audio." : "Karaokize to prepare audio.",
+          message.hasLyrics ? t("savedLyricsReadyPrepareAudio") : t("prepareAudio"),
           message.hasLyrics ? "success" : "idle"
         );
       }
@@ -81,7 +81,7 @@ chrome.runtime.onMessage.addListener((message) => {
       cacheCheckComplete = true;
       karaokizeAvailable = true;
       setProcessing(false);
-      setProcessStatus(message.message || "Could not check saved results. Karaokize is still available.", "info");
+      setProcessStatus(message.message || t("cacheCheckFailedStillAvailable"), "info");
     }
     return;
   }
@@ -92,16 +92,16 @@ chrome.runtime.onMessage.addListener((message) => {
       setLyrics(message.lyrics || { text: lyricsText, segments: [], source: "manual" });
       updateLyricsProcessButtons();
       setProcessing(processing);
-      setLyricsStatus(message.message || "Lyrics timings extracted.", "success");
+      setLyricsStatus(message.message || t("lyricsTimingsExtracted"), "success");
     } else if (message.status === "error") {
       timingsProcessing = false;
       timingsJobId = null;
       autoExtractAfterSearch = false;
       updateLyricsProcessButtons();
       setProcessing(processing);
-      setLyricsStatus(message.message || "Could not extract lyric timings.", "error");
+      setLyricsStatus(message.message || t("couldNotExtractTimings"), "error");
     } else {
-      setLyricsStatus(message.message || "Extracting timings...", "busy");
+      setLyricsStatus(message.message || t("extractingTimings"), "busy");
     }
     return;
   }
@@ -113,7 +113,7 @@ chrome.runtime.onMessage.addListener((message) => {
       setLyrics(youtubeLyrics);
       updateLyricsProcessButtons();
       setLyricsStatus(
-        youtubeLyrics.text ? (message.message || "LRCLIB lyrics loaded.") : "LRCLIB found no reliable match. You can enter lyrics manually.",
+        youtubeLyrics.text ? (message.message || t("lrclibLyricsLoaded")) : t("lrclibNoReliableMatch"),
         youtubeLyrics.segments?.length ? "success" : "info"
       );
       if (autoExtractAfterSearch) {
@@ -124,7 +124,7 @@ chrome.runtime.onMessage.addListener((message) => {
       lyricsSearchJobId = null;
       autoExtractAfterSearch = false;
       updateLyricsProcessButtons();
-      setLyricsStatus(message.message || "LRCLIB search failed. You can enter lyrics manually.", "info");
+      setLyricsStatus(message.message || t("lrclibSearchFailedManual"), "info");
     }
     return;
   }
@@ -136,7 +136,7 @@ chrome.runtime.onMessage.addListener((message) => {
       setLyrics(message.lyrics);
     }
     setLyricsStatus(
-      message.message || "Lyrics available; refining timing after separation...",
+      message.message || t("lyricsAvailableRefining"),
       message.lyrics?.segments?.length ? "success" : "busy"
     );
   } else if (message.status === "stemsReady") {
@@ -149,15 +149,15 @@ chrome.runtime.onMessage.addListener((message) => {
       clearMonitorJob(activeJobId);
       activeJobId = null;
       setProcessing(false);
-      setProcessStatus("The backend did not return both separated audio tracks.", "error");
+      setProcessStatus(t("backendMissingTracks"), "error");
       return;
     }
     activeJobStemsReady = true;
     prepareCustomAudio(
       { instrumental: message.instrumentalUrl, vocals: message.vocalsUrl },
       message.cacheHit
-        ? "Cached separated audio ready."
-        : "Separated audio ready."
+        ? t("cachedSeparatedReady")
+        : t("separatedAudioReady")
     );
   } else if (message.status === "complete") {
     const hasFinalStems = activeJobStemsReady || Boolean(message.instrumentalUrl && message.vocalsUrl);
@@ -167,30 +167,30 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.lyrics) {
       setLyrics(message.lyrics);
       setLyricsStatus(
-        message.lyrics.segments?.length ? "Synchronized lyrics ready." : "Lyrics loaded without extracted timings.",
+        message.lyrics.segments?.length ? t("synchronizedLyricsReady") : t("lyricsLoadedNoTimings"),
         message.lyrics.segments?.length ? "success" : "info"
       );
     }
     if (!activeJobStemsReady && message.instrumentalUrl && message.vocalsUrl) {
       prepareCustomAudio(
         { instrumental: message.instrumentalUrl, vocals: message.vocalsUrl },
-        "Separated audio ready. Synchronizing instrumental..."
+        t("separatedAudioReadySync")
       );
     } else {
-      setProcessStatus("Separated audio ready.", "success");
+      setProcessStatus(t("separatedAudioReady"), "success");
     }
     activeJobStemsReady = false;
   } else if (message.status === "error") {
     activeJobId = null;
     activeJobStemsReady = false;
     setProcessing(false);
-    setProcessStatus(message.message || "Download failed.", "error");
+    setProcessStatus(message.message || t("downloadFailed"), "error");
   } else {
     setProcessing(true);
     if (["lyrics", "lyricsLookup"].includes(message.phase)) {
-      setLyricsStatus(message.message || "Processing lyrics...", "busy");
+      setLyricsStatus(message.message || t("processingLyrics"), "busy");
     } else {
-      setProcessStatus(message.message || "Processing...", "busy", message.progress);
+      setProcessStatus(message.message || t("processing"), "busy", message.progress);
     }
   }
 });

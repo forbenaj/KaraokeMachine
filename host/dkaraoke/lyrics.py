@@ -440,7 +440,7 @@ def lrclib_candidate_key(candidate):
 def fetch_lrclib_candidates(params):
     request = Request(
         f"{LRCLIB_SEARCH_URL}?{urlencode(params)}",
-        headers={"User-Agent": "DKaraoKe/1.10 (local Chrome extension)"},
+        headers={"User-Agent": "Karaoke Machine!/1.10 (local Chrome extension)"},
     )
     with urlopen(request, timeout=LRCLIB_SEARCH_TIMEOUT_SECONDS) as response:
         candidates = json.loads(response.read().decode("utf-8"))

@@ -5,9 +5,9 @@ function startKaraokize() {
   const jobId = crypto.randomUUID();
   activeJobId = jobId;
   activeJobStemsReady = false;
-  setMonitorActivity(jobId, "audio", "Connecting...");
+  setMonitorActivity(jobId, "audio", t("connecting"));
   setProcessing(true);
-  setProcessStatus("Connecting to the downloader...", "busy");
+  setProcessStatus(t("connectingDownloader"), "busy");
 
   chrome.runtime.sendMessage({
     type: "dkaraoke-karaokize",
@@ -29,10 +29,10 @@ function startKaraokize() {
         timingsProcessing = false;
         timingsJobId = null;
         updateLyricsProcessButtons();
-        setLyricsStatus("Could not start lyric timing because Karaokize failed to start.", "error");
+        setLyricsStatus(t("couldNotStartTimingKaraokize"), "error");
       }
       setProcessing(false);
-      setProcessStatus(error || "Could not start the downloader.", "error");
+      setProcessStatus(error || t("couldNotStartDownloader"), "error");
     }
   });
   if (!lyricsTiming) startLyricsExtractionPipeline();

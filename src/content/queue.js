@@ -1,9 +1,9 @@
 function summarizeQueueItem(item) {
-  if (item.status === "queued") return "Queued";
+  if (item.status === "queued") return t("queued");
   if (Number.isFinite(item.progress) && !/%/.test(item.message || "")) {
-    return `${item.message || "Processing"} ${Math.round(item.progress)}%`;
+    return `${localizeMessage(item.message || t("processing"))} ${Math.round(item.progress)}%`;
   }
-  return item.message || "Processing";
+  return localizeMessage(item.message || t("processing"));
 }
 
 function isQueueItemTerminal(item) {
@@ -29,7 +29,7 @@ function applyQueueForCurrentVideo() {
   karaokizeAvailable = false;
   setProcessing(true);
   setProcessStatus(summarizeQueueItem(job), "busy", job.progress);
-  setMonitorActivity(job.jobId, "audio", job.status === "queued" ? "Queued..." : "Processing...");
+  setMonitorActivity(job.jobId, "audio", job.status === "queued" ? t("monitorQueued") : t("processing"));
 }
 
 function renderQueuePanel(panel) {
@@ -37,10 +37,10 @@ function renderQueuePanel(panel) {
   const header = document.createElement("div");
   header.className = "dkaraoke-queue-header";
   const title = document.createElement("strong");
-  title.textContent = "Queue";
+  title.textContent = t("queue");
   const close = document.createElement("button");
   close.type = "button";
-  close.textContent = "Close";
+  close.textContent = t("close");
   close.addEventListener("click", () => {
     queuePanelOpen = false;
     updateQueueUI();
@@ -55,7 +55,7 @@ function renderQueuePanel(panel) {
     row.dataset.status = item.status || "queued";
     const itemTitle = document.createElement("span");
     itemTitle.className = "dkaraoke-queue-title";
-    itemTitle.textContent = item.title || "YouTube song";
+    itemTitle.textContent = item.title || t("youtubeSong");
     const meta = document.createElement("span");
     meta.className = "dkaraoke-queue-meta";
     meta.textContent = summarizeQueueItem(item);
@@ -82,7 +82,7 @@ function ensureQueueUI() {
     panel = document.createElement("aside");
     panel.id = QUEUE_PANEL_ID;
     panel.hidden = true;
-    panel.setAttribute("aria-label", "DKaraoKe processing queue");
+    panel.setAttribute("aria-label", t("queueAria"));
     document.body.appendChild(panel);
   }
   return { button, panel };
@@ -99,7 +99,7 @@ function updateQueueUI(nextItems = queueItems) {
   if (current) {
     const label = document.createElement("span");
     label.className = "dkaraoke-queue-button-title";
-    label.textContent = current.title || "Processing song";
+    label.textContent = current.title || t("processingSong");
     button.appendChild(label);
     if (queueItems.length > 1) {
       const count = document.createElement("span");
@@ -117,7 +117,7 @@ function refreshQueueState() {
   chrome.runtime.sendMessage({ type: "dkaraoke-get-queue" }, (response) => {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (error || !response?.ok) {
-      recordDiagnostic("warning", "queue_refresh_failed", error || "Queue refresh returned no usable response.");
+      recordDiagnostic("warning", "queue_refresh_failed", error || t("queueUpdated"));
       return;
     }
     updateQueueUI(response.queue || []);

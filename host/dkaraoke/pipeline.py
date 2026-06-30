@@ -543,18 +543,18 @@ def extract_lyrics_timings(
             _, vocals_path = resolve_cached_stems(job_id, stem_dir)
             if not is_complete_file(vocals_path):
                 if not stem_job_active(video_id):
-                    raise FileNotFoundError("Karaokize this song before extracting lyric timings.")
+                    raise FileNotFoundError("Prepare this song before extracting lyric timings.")
                 send_job(
                     job_id, "status",
-                    "Waiting for Karaokize to prepare the vocal stem...",
+                    "Waiting for Karaoke Machine! to prepare the vocal stem...",
                     phase="lyrics",
                 )
                 if not stem_ready_event(video_id).wait(STEM_WAIT_TIMEOUT_SECONDS):
-                    raise TimeoutError("Timed out waiting for Karaokize to prepare the vocal stem.")
+                    raise TimeoutError("Timed out waiting for Karaoke Machine! to prepare the vocal stem.")
                 _, vocals_path = resolve_cached_stems(job_id, stem_dir)
                 if not is_complete_file(vocals_path):
                     raise FileNotFoundError(
-                        "Karaokize did not produce a usable vocal stem."
+                        "Karaoke Machine! did not produce a usable vocal stem."
                     )
             else:
                 send_job(
