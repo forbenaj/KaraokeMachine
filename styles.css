@@ -349,9 +349,9 @@ html.dkaraoke-enabled ytd-watch-flexy #player-full-bleed-container {
 }
 
 html.dkaraoke-enabled ytd-watch-flexy #player-container-outer {
-  outline: var(--dk-border-lg);
+  outline: 0;
   border-radius: 0 !important;
-  box-shadow: var(--dk-panel-shadow);
+  box-shadow: none;
 }
 
 /* ==========================================================================
@@ -1045,6 +1045,25 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
   color: var(--dk-paper);
   text-shadow: var(--dk-overlay-shadow);
   transform: translateY(-0.03em) scale(1.06);
+}
+
+html.dkaraoke-enabled:has(.html5-video-player.ytp-fullscreen) #dkaraoke-lyrics-overlay,
+html.dkaraoke-enabled:has(:fullscreen) #dkaraoke-lyrics-overlay {
+  width: min(92%, 1440px);
+  font-size: clamp(34px, 5.8vw, 88px);
+  -webkit-text-stroke-width: clamp(1px, 0.16vw, 4px);
+}
+
+html.dkaraoke-enabled:has(.html5-video-player.ytp-fullscreen) #dkaraoke-lyrics-overlay[data-style="simple"],
+html.dkaraoke-enabled:has(:fullscreen) #dkaraoke-lyrics-overlay[data-style="simple"] {
+  font-size: clamp(30px, 4.8vw, 74px);
+}
+
+html.dkaraoke-enabled:has(.html5-video-player.ytp-fullscreen) #dkaraoke-lyrics-overlay[data-style="classic"],
+html.dkaraoke-enabled:has(:fullscreen) #dkaraoke-lyrics-overlay[data-style="classic"] {
+  width: min(92%, 1280px);
+  max-height: min(72vh, 700px);
+  font-size: clamp(30px, 5vw, 76px);
 }
 
 /* ==========================================================================
