@@ -1,6 +1,13 @@
-# Karaoke Machine! for YouTube
+# Karaoke Machine! (カラオケマシン！)
 
-Karaoke Machine! is a Windows-first Chrome MV3 extension with a local Python backend. It adds synchronized instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
+![Logo-EN](km-en.png)
+![Logo](km_transparent.png)
+
+Turn *YouTube* into a *Karaoke Machine*!
+
+Karaokizes _any_ existing song, by removing the Vocals and displaying the lyrics on screen.
+
+Karaoke Machine! is a Windows-first Chrome MV3 extension with a local Python backend. It adds instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
 
 ## Install
 
@@ -44,7 +51,7 @@ while Karaoke Machine! is still preparing the same song and the timing source is
 vocal stem, the timing job waits for the stem and starts automatically when it
 becomes available. Original audio is the default timing source and can start
 without depending on stem extraction. To avoid GPU/CPU contention, Press me
-uses **Stems first** by default; **Lyrics first** and **Run together** are
+uses **Lyrics first** by default; **Stems first** and **Run together** are
 available in settings.
 
 ### Playback Controls

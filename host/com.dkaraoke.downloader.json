@@ -1,6 +1,6 @@
 ﻿{
     "name":  "com.dkaraoke.downloader",
-    "description":  "Local downloader and RoFormer separator for DKaraoKe",
+    "description":  "Local downloader and RoFormer separator for Karaoke Machine!",
     "path":  "D:\\Benja\\Documents\\DKaraoKe\\host\\dkaraoke_host.cmd",
     "type":  "stdio",
     "allowed_origins":  [

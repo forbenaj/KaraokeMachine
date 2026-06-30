@@ -136,8 +136,8 @@ html.dkaraoke-enabled {
   --yt-spec-general-background-b: transparent !important;
   --yt-spec-general-background-c: transparent !important;
   color-scheme: light;
-  background-color: #d0d0d0 !important;
-  background-image: var(--dk-page-bg-muted) !important;
+  background-color: var(--dk-yellow) !important;
+  background-image: var(--dk-page-bg) !important;
   background-size: 8px 8px, 100% 100% !important;
   background-attachment: fixed !important;
 }
@@ -145,8 +145,8 @@ html.dkaraoke-enabled {
 html.dkaraoke-enabled body,
 html[dark].dkaraoke-enabled body {
   color: var(--dk-ink) !important;
-  background-color: #d0d0d0 !important;
-  background-image: var(--dk-page-bg-muted) !important;
+  background-color: var(--dk-yellow) !important;
+  background-image: var(--dk-page-bg) !important;
   background-size: 8px 8px, 100% 100% !important;
   background-attachment: fixed !important;
   animation: none !important;
