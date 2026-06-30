@@ -19,6 +19,91 @@ const JOB_TIMEOUT_MS = {
   lyricsSearch: 3 * 60 * 1000,
   lyricsTimings: 10.5 * 60 * 60 * 1000,
 };
+const DIAGNOSTIC_LEVELS = new Set(["warning", "error"]);
+const DIAGNOSTIC_SENSITIVE_KEYS = [
+  "authorization",
+  "cookie",
+  "instrumentalurl",
+  "password",
+  "secret",
+  "src",
+  "token",
+  "value",
+  "vocalsurl",
+];
+
+function sanitizeDiagnosticString(value, limit = 1000) {
+  const text = String(value || "").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+  return text.length > limit ? `${text.slice(0, limit)}...<truncated ${text.length - limit} chars>` : text;
+}
+
+function sanitizeDiagnosticValue(value, key = "", depth = 0) {
+  const normalizedKey = String(key || "").replace(/[-_]/g, "").toLowerCase();
+  if (["href", "rawurl", "url"].includes(normalizedKey)
+    || DIAGNOSTIC_SENSITIVE_KEYS.some((part) => normalizedKey.includes(part))) {
+    return "[redacted]";
+  }
+  if (depth >= 5) return "[max-depth]";
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeDiagnosticValue(item, key, depth + 1));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([entryKey, entryValue]) => [
+      sanitizeDiagnosticString(entryKey, 120),
+      sanitizeDiagnosticValue(entryValue, entryKey, depth + 1),
+    ]));
+  }
+  if (typeof value === "boolean" || typeof value === "number" || value === null) return value;
+  return sanitizeDiagnosticString(value);
+}
+
+function normalizeDiagnosticLevel(level) {
+  const value = String(level || "info").toLowerCase();
+  return DIAGNOSTIC_LEVELS.has(value) ? value : "info";
+}
+
+function diagnosticJobId() {
+  return `diagnostic-${Date.now()}-${crypto.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+}
+
+function postDiagnosticToHost(entry) {
+  let port;
+  try {
+    port = ensureNativePort();
+    port.postMessage({
+      action: "recordDiagnostic",
+      jobId: diagnosticJobId(),
+      diagnostic: entry,
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function recordDiagnostic({
+  source = "background",
+  level = "info",
+  event = "event",
+  message = "",
+  jobId = "",
+  videoId = "",
+  phase = "",
+  details = {},
+} = {}) {
+  const normalizedLevel = normalizeDiagnosticLevel(level);
+  if (!DIAGNOSTIC_LEVELS.has(normalizedLevel)) return false;
+  return postDiagnosticToHost({
+    source: sanitizeDiagnosticString(source, 80),
+    level: normalizedLevel,
+    event: sanitizeDiagnosticString(event, 120),
+    message: sanitizeDiagnosticString(message),
+    jobId: sanitizeDiagnosticString(jobId, 120),
+    videoId: sanitizeDiagnosticString(videoId, 120),
+    phase: sanitizeDiagnosticString(phase, 80),
+    details: sanitizeDiagnosticValue(details),
+  });
+}
 
 function clearJobTimeout(jobId) {
   const timeoutId = jobTimeouts.get(jobId);
@@ -34,6 +119,15 @@ function armJobTimeout(jobId, kind) {
     const job = jobs.get(jobId);
     if (!job) return;
     const message = `The ${kind} operation timed out.`;
+    recordDiagnostic({
+      level: "error",
+      event: "job_timeout",
+      message,
+      jobId,
+      videoId: job.videoId || "",
+      phase: job.phase || kind,
+      details: { kind, title: job.title || "" },
+    });
     if (job.kind !== "download") {
       failJob(jobId, message);
       return;
@@ -69,7 +163,30 @@ function normalizeTimingSchedule(value) {
 
 function sendToTab(tabId, payload) {
   if (!tabId) return;
-  chrome.tabs.sendMessage(tabId, payload, () => void chrome.runtime.lastError);
+  chrome.tabs.sendMessage(tabId, payload, () => {
+    const error = chrome.runtime.lastError?.message;
+    if (error) {
+      if (
+        error === "The message port closed before a response was received."
+        || error === "Could not establish connection. Receiving end does not exist."
+      ) {
+        return;
+      }
+      recordDiagnostic({
+        level: "warning",
+        event: "tab_message_failed",
+        message: error,
+        jobId: payload?.jobId || "",
+        videoId: payload?.videoId || "",
+        phase: payload?.phase || "",
+        details: {
+          tabId,
+          payloadType: payload?.type || "",
+          status: payload?.status || "",
+        },
+      });
+    }
+  });
 }
 
 function queueSnapshot() {
@@ -96,7 +213,14 @@ function queueSnapshot() {
 function broadcastQueue() {
   const payload = { type: "dkaraoke-queue", queue: queueSnapshot() };
   chrome.tabs.query({ url: ["https://www.youtube.com/*"] }, (tabs) => {
-    if (chrome.runtime.lastError) return;
+    if (chrome.runtime.lastError) {
+      recordDiagnostic({
+        level: "warning",
+        event: "tabs_query_failed",
+        message: chrome.runtime.lastError.message,
+      });
+      return;
+    }
     for (const tab of tabs) sendToTab(tab.id, payload);
   });
 }
@@ -109,6 +233,14 @@ function updateDownloadJob(jobId, fields) {
 }
 
 function failAllJobs(message) {
+  if (nativePort) {
+    recordDiagnostic({
+      level: "error",
+      event: "all_jobs_failed",
+      message,
+      details: { jobCount: jobs.size },
+    });
+  }
   for (const [jobId, job] of jobs) {
     sendToTab(job.tabId, {
       type: "dkaraoke-status",
@@ -166,10 +298,27 @@ function ensureNativePort() {
 
   nativePort.onMessage.addListener((hostMessage) => {
     if (!hostMessage || typeof hostMessage !== "object" || typeof hostMessage.jobId !== "string") {
+      recordDiagnostic({
+        level: "warning",
+        event: "invalid_host_message",
+        message: "Native host sent an invalid message.",
+        details: { messageType: typeof hostMessage },
+      });
       return;
     }
     const job = jobs.get(hostMessage.jobId);
-    if (!job) return;
+    if (!job) {
+      recordDiagnostic({
+        level: "warning",
+        event: "unknown_host_job",
+        message: "Native host sent a message for an unknown job.",
+        jobId: hostMessage.jobId,
+        videoId: hostMessage.videoId || "",
+        phase: hostMessage.phase || "",
+        details: { status: hostMessage.type || "" },
+      });
+      return;
+    }
     const statusMessage = hostMessage.message || "";
 
     if (job.kind === "download") {
@@ -222,6 +371,14 @@ function postDownloadToHost(job) {
   try {
     port = ensureNativePort();
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_connect_failed",
+      message: String(error),
+      jobId: job.jobId,
+      videoId: job.videoId || "",
+      phase: "connect",
+    });
     failDeferredTimings(job.videoId, "Karaokize could not start, so lyric timings cannot be extracted.");
     sendToTab(job.tabId, {
       type: "dkaraoke-status",
@@ -250,6 +407,14 @@ function postDownloadToHost(job) {
       job.hostPosted = true;
       flushDeferredTimings(job.videoId);
     } catch (error) {
+      recordDiagnostic({
+        level: "error",
+        event: "native_post_download_failed",
+        message: String(error),
+        jobId: job.jobId,
+        videoId: job.videoId || "",
+        phase: "connect",
+      });
       failDeferredTimings(job.videoId, "Karaokize could not start, so lyric timings cannot be extracted.");
       sendToTab(job.tabId, {
         type: "dkaraoke-status",
@@ -297,6 +462,14 @@ function checkCache(message, tabId, sendResponse) {
   try {
     port = ensureNativePort();
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_connect_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "cache",
+    });
     sendResponse({ ok: false, error: String(error) });
     return;
   }
@@ -310,6 +483,14 @@ function checkCache(message, tabId, sendResponse) {
     });
     sendResponse({ ok: true });
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_post_cache_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "cache",
+    });
     jobs.delete(message.jobId);
     clearJobTimeout(message.jobId);
     sendResponse({ ok: false, error: String(error) });
@@ -336,6 +517,13 @@ function collectYouTubeCookies(callback) {
             value: cookie.value
           });
         }
+      } else {
+        recordDiagnostic({
+          level: "warning",
+          event: "cookie_collection_failed",
+          message: chrome.runtime.lastError.message,
+          details: { domain },
+        });
       }
 
       pending -= 1;
@@ -411,6 +599,14 @@ function searchLrclib(message, tabId, sendResponse) {
   try {
     port = ensureNativePort();
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_connect_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "lyricsLookup",
+    });
     sendResponse({ ok: false, error: String(error) });
     return;
   }
@@ -426,6 +622,14 @@ function searchLrclib(message, tabId, sendResponse) {
     });
     sendResponse({ ok: true });
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_post_lrclib_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "lyricsLookup",
+    });
     jobs.delete(message.jobId);
     clearJobTimeout(message.jobId);
     sendResponse({ ok: false, error: String(error) });
@@ -437,6 +641,14 @@ function extractLyricsTimings(message, tabId, sendResponse) {
   try {
     port = ensureNativePort();
   } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_connect_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "lyrics",
+    });
     sendResponse({ ok: false, error: String(error) });
     return;
   }
@@ -465,6 +677,14 @@ function extractLyricsTimings(message, tabId, sendResponse) {
       port.postMessage({ ...hostMessage, cookies });
       sendResponse({ ok: true });
     } catch (error) {
+      recordDiagnostic({
+        level: "error",
+        event: "native_post_timings_failed",
+        message: String(error),
+        jobId: message.jobId,
+        videoId,
+        phase: "lyrics",
+      });
       jobs.delete(message.jobId);
       clearJobTimeout(message.jobId);
       sendResponse({ ok: false, error: String(error) });
@@ -474,10 +694,34 @@ function extractLyricsTimings(message, tabId, sendResponse) {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return undefined;
+  if (message.type === "dkaraoke-record-diagnostic") {
+    const ok = recordDiagnostic({
+      source: message.source || "content",
+      level: message.level || "info",
+      event: message.event || "content_event",
+      message: message.message || "",
+      jobId: message.jobId || "",
+      videoId: message.videoId || "",
+      phase: message.phase || "",
+      details: {
+        ...(message.details && typeof message.details === "object" ? message.details : {}),
+        tabId: sender.tab?.id || "",
+      },
+    });
+    sendResponse({ ok });
+    return undefined;
+  }
   if (
     message.type !== "dkaraoke-get-queue"
     && (typeof message.jobId !== "string" || !message.jobId || jobs.has(message.jobId))
   ) {
+    recordDiagnostic({
+      level: "warning",
+      event: "invalid_or_duplicate_job",
+      message: "Rejected a runtime message with an invalid or duplicate job ID.",
+      jobId: typeof message.jobId === "string" ? message.jobId : "",
+      details: { messageType: message.type || "", tabId: sender.tab?.id || "" },
+    });
     sendResponse({ ok: false, error: "Invalid or duplicate job ID." });
     return undefined;
   }

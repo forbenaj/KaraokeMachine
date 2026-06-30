@@ -9,11 +9,19 @@ LOG_BACKUP_DAYS = 30
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(threadName)s] %(message)s"
 
 
-def configure_logging():
+def app_log_dir():
     local_app_data = os.environ.get("LOCALAPPDATA")
     log_dir = Path(local_app_data) / "DKaraoKe" if local_app_data else Path.home() / ".dkaraoke"
     log_dir.mkdir(parents=True, exist_ok=True)
-    log_path = log_dir / "dkaraoke.log"
+    return log_dir
+
+
+LOG_DIR = app_log_dir()
+DIAGNOSTICS_PATH = LOG_DIR / "dkaraoke-diagnostics.log"
+
+
+def configure_logging():
+    log_path = LOG_DIR / "dkaraoke.log"
 
     logger = logging.getLogger(LOGGER_NAME)
     logger.setLevel(logging.INFO)

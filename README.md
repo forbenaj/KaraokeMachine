@@ -124,6 +124,19 @@ Watch it while processing:
 Get-Content "$env:LOCALAPPDATA\DKaraoKe\dkaraoke.log" -Wait
 ```
 
+DKaraoKe also appends warnings, errors, and recoverable oddities to a
+human-readable diagnostics journal:
+
+```text
+%LOCALAPPDATA%\DKaraoKe\dkaraoke-diagnostics.log
+```
+
+Each line has a timestamp, severity, source, event, message, and safe context
+such as job ID, video ID, or phase. The journal records every warning/error
+diagnostic DKaraoKe emits; it is not limited to the visible debug panel or to
+the most recent entries. Cookies, native-message payloads, and local
+audio-server tokens are redacted.
+
 Common recovery steps:
 
 - **Native host unavailable:** rerun `.\install.ps1`, restart Chrome, and reload the extension.

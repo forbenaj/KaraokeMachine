@@ -356,6 +356,9 @@ function searchLrclibLyrics() {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (lyricsSearchJobId !== jobId) return;
     if (!response?.ok || error) {
+      recordDiagnostic("warning", "lrclib_search_start_failed", error || "LRCLIB search could not start.", {
+        jobId,
+      });
       lyricsSearchJobId = null;
       markJobFinished(jobId);
       clearDebugJob(jobId);
@@ -396,6 +399,11 @@ function extractLyricsTimings() {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (timingsJobId !== jobId) return;
     if (!response?.ok || error) {
+      recordDiagnostic("error", "lyrics_timing_start_failed", error || "Lyric timing extraction could not start.", {
+        jobId,
+        timingMethod,
+        timingSource,
+      });
       timingsProcessing = false;
       timingsJobId = null;
       markJobFinished(jobId);

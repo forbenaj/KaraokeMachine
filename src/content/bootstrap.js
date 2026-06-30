@@ -38,6 +38,15 @@ chrome.runtime.onMessage.addListener((message) => {
   }
   if (message?.type !== "dkaraoke-status") return;
   recordBackendDebug(message);
+  if (message.status === "error") {
+    recordDiagnostic("error", "backend_status_error", message.message || "Backend reported an error.", {
+      jobId: message.jobId || "",
+      phase: message.phase || "",
+      cacheHit: message.cacheHit === true,
+      hasLyrics: message.hasLyrics === true,
+      hasStems: message.hasStems === true,
+    });
+  }
   if (updateMonitorFromBackend(message)) return;
   if (cacheCheckJobId && message.jobId === cacheCheckJobId) {
     if (message.status === "cacheCheck") {
@@ -132,6 +141,11 @@ chrome.runtime.onMessage.addListener((message) => {
     );
   } else if (message.status === "stemsReady") {
     if (!message.instrumentalUrl || !message.vocalsUrl) {
+      recordDiagnostic("error", "stems_ready_missing_urls", "Backend reported stems ready without both audio URLs.", {
+        jobId: activeJobId,
+        hasInstrumentalUrl: Boolean(message.instrumentalUrl),
+        hasVocalsUrl: Boolean(message.vocalsUrl),
+      });
       clearMonitorJob(activeJobId);
       activeJobId = null;
       setProcessing(false);

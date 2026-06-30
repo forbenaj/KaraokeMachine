@@ -9,7 +9,22 @@ from pathlib import Path
 from unittest.mock import patch
 
 from host import dkaraoke_host as host
+from host.dkaraoke import diagnostics
 from host import lyrics_runner
+
+
+class JsonResponse:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return json.dumps(self.payload).encode("utf-8")
 
 
 class LyricsMetadataTests(unittest.TestCase):
@@ -34,6 +49,16 @@ class LyricsMetadataTests(unittest.TestCase):
         self.assertEqual(metadata["title"], "Bizarre Love Triangle")
         self.assertEqual(metadata["artist"], "New Order")
         self.assertEqual(metadata["duration"], 262.5)
+
+    def test_accepts_unicode_title_separators(self):
+        metadata = host.song_metadata_from_title(
+            "A-ha – Take On Me [Official Music Video]",
+            225,
+        )
+
+        self.assertEqual(metadata["title"], "Take On Me")
+        self.assertEqual(metadata["artist"], "A-ha")
+        self.assertEqual(metadata["duration"], 225.0)
 
 
 class YoutubeHelperTests(unittest.TestCase):
@@ -79,6 +104,70 @@ class LrcParsingTests(unittest.TestCase):
         )
 
         self.assertEqual(score, -1.0)
+
+    def test_lrclib_score_tolerates_feature_metadata(self):
+        score = host.lrclib_candidate_score(
+            {
+                "trackName": "Save Your Tears",
+                "artistName": "The Weeknd",
+                "duration": 215,
+                "syncedLyrics": "[00:01.00]Save your tears",
+            },
+            {
+                "title": "Save Your Tears (feat. Ariana Grande)",
+                "artist": "The Weeknd feat. Ariana Grande",
+                "duration": 214,
+            },
+        )
+
+        self.assertGreaterEqual(score, 0.88)
+
+    def test_lrclib_search_stops_after_confident_primary_match(self):
+        candidate = {
+            "id": 1,
+            "trackName": "Yellow",
+            "artistName": "Coldplay",
+            "albumName": "Parachutes",
+            "duration": 267,
+            "syncedLyrics": "[00:01.00]Look at the stars",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(host.lyrics, "urlopen", return_value=JsonResponse([candidate])) as urlopen:
+                result = host.fetch_lrclib_lyrics(
+                    {"title": "Coldplay - Yellow", "duration": 267},
+                    Path(temporary),
+                )
+
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertEqual(result["text"], "Look at the stars")
+        self.assertEqual(result["providerId"], 1)
+        self.assertEqual(result["searchCount"], 1)
+        self.assertIn("matchBreakdown", result)
+
+    def test_lrclib_search_tries_swapped_title_artist_variant(self):
+        candidate = {
+            "id": 2,
+            "trackName": "Yellow",
+            "artistName": "Coldplay",
+            "albumName": "Parachutes",
+            "duration": 267,
+            "plainLyrics": "Look at the stars",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(
+                host.lyrics,
+                "urlopen",
+                side_effect=[JsonResponse([]), JsonResponse([candidate])],
+            ) as urlopen:
+                result = host.fetch_lrclib_lyrics(
+                    {"title": "Yellow - Coldplay", "duration": 267},
+                    Path(temporary),
+                )
+
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(result["text"], "Look at the stars")
+        self.assertEqual(result["artist"], "Coldplay")
+        self.assertGreaterEqual(result["matchScore"], 0.88)
 
     def test_silero_vad_segments_distribute_lines_over_vocal_activity(self):
         segments = host.lyrics.build_silero_vad_segments(
@@ -918,6 +1007,15 @@ class PipelineConcurrencyTests(unittest.TestCase):
 
 
 class NativeMessagingTests(unittest.TestCase):
+    def test_diagnostic_action_does_not_require_processing_job_id(self):
+        with patch.object(host.app, "record_external_diagnostic") as record:
+            host.handle_message({
+                "action": "recordDiagnostic",
+                "diagnostic": {"event": "content_warning"},
+            })
+
+        record.assert_called_once_with({"event": "content_warning"})
+
     def test_send_message_translates_closed_pipe(self):
         class ClosedBuffer:
             def write(self, _data):
@@ -943,6 +1041,52 @@ class NativeMessagingTests(unittest.TestCase):
             host.main()
 
         stop_audio_server.assert_called_once()
+
+
+class DiagnosticsTests(unittest.TestCase):
+    def test_diagnostics_journal_appends_readable_warning_and_redacts_sensitive_values(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "dkaraoke-diagnostics.log"
+            with patch.object(diagnostics, "DIAGNOSTICS_PATH", path):
+                entry = diagnostics.record_diagnostic(
+                    "warning",
+                    "browser_audio_weirdness",
+                    "A recoverable audio issue happened.",
+                    source="content",
+                    job_id="job",
+                    video_id="abcdefghijk",
+                    phase="audio",
+                    details={
+                        "token": "secret-token",
+                        "url": "http://127.0.0.1/audio/secret-token",
+                        "readyState": 2,
+                    },
+                )
+
+            lines = path.read_text(encoding="utf-8").splitlines()
+
+        self.assertEqual(len(lines), 1)
+        self.assertIn("WARNING [content] browser_audio_weirdness:", lines[0])
+        self.assertIn("job=job", lines[0])
+        self.assertIn("video=abcdefghijk", lines[0])
+        self.assertIn("token=[redacted]", lines[0])
+        self.assertIn("url=[redacted]", lines[0])
+        self.assertIn("readyState=2", lines[0])
+        self.assertNotIn("{\"", lines[0])
+        self.assertEqual(entry["event"], "browser_audio_weirdness")
+
+    def test_diagnostics_journal_ignores_info_entries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "dkaraoke-diagnostics.log"
+            with patch.object(diagnostics, "DIAGNOSTICS_PATH", path):
+                entry = diagnostics.record_diagnostic(
+                    "info",
+                    "native_host_started",
+                    "Native host started.",
+                )
+
+            self.assertIsNone(entry)
+            self.assertFalse(path.exists())
 
 
 class FailureHandlingTests(unittest.TestCase):

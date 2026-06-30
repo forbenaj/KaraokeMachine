@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -16,6 +17,7 @@ from .constants import (
     YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
     TIMING_PIPELINE_SCHEDULES,
 )
+from .diagnostics import record_diagnostic
 from .logging_setup import LOGGER
 from .lyrics import (
     fetch_lrclib_lyrics,
@@ -196,6 +198,15 @@ def run_roformer(job_id, source_path, output_dir):
         if not roformer_completed:
             for path in (instrumental_path, vocals_path):
                 unlink_best_effort(path, "failed RoFormer output cleanup")
+        record_diagnostic(
+            "error",
+            "roformer_failed",
+            "RoFormer separation failed.",
+            job_id=job_id,
+            phase="separate",
+            details={"sourcePath": str(source_path), "outputDir": str(output_dir)},
+            exc=sys.exc_info()[1],
+        )
         raise
 
 
@@ -223,6 +234,14 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
                 cookie_path = write_cookie_file(cookies)
                 if not cookie_path:
                     break
+                record_diagnostic(
+                    "warning",
+                    "youtube_auth_retry",
+                    "YouTube requested sign-in; retrying the audio download with Chrome cookies.",
+                    job_id=job_id,
+                    video_id=video_id,
+                    phase=phase,
+                )
                 send_job(
                     job_id, "status",
                     "YouTube requested sign-in; retrying with Chrome cookies...",
@@ -278,14 +297,48 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
             LOGGER.info("job=%s yt-dlp exited code=%s", job_id, return_code)
             if return_code == 0:
                 if not source_path or not is_complete_file(source_path):
+                    record_diagnostic(
+                        "error",
+                        "download_missing_source",
+                        "yt-dlp finished, but the source audio file was not found.",
+                        job_id=job_id,
+                        video_id=video_id,
+                        phase=phase,
+                    )
                     raise FileNotFoundError("yt-dlp finished, but the source audio file was not found.")
                 return source_path
 
             output_text = "\n".join(output_lines)
             if not use_cookies and has_auth_error(output_text):
+                record_diagnostic(
+                    "warning",
+                    "youtube_auth_required",
+                    "Anonymous YouTube audio download failed with an auth-related response.",
+                    job_id=job_id,
+                    video_id=video_id,
+                    phase=phase,
+                    details={"lastLine": last_line},
+                )
                 continue
+            record_diagnostic(
+                "error",
+                "download_process_failed",
+                last_line or f"yt-dlp exited with code {return_code}.",
+                job_id=job_id,
+                video_id=video_id,
+                phase=phase,
+                details={"returnCode": return_code},
+            )
             raise RuntimeError(last_line or f"yt-dlp exited with code {return_code}.")
 
+        record_diagnostic(
+            "error",
+            "download_failed",
+            last_line or "yt-dlp could not download this audio.",
+            job_id=job_id,
+            video_id=video_id,
+            phase=phase,
+        )
         raise RuntimeError(last_line or "yt-dlp could not download this audio.")
     finally:
         if cookie_path and cookie_path.exists():
@@ -374,6 +427,15 @@ def run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timin
         )
     except Exception as exc:
         LOGGER.exception("job=%s source timing failed", timing_job_id)
+        record_diagnostic(
+            "error",
+            "lyrics_timing_failed",
+            str(exc),
+            job_id=timing_job_id,
+            video_id=video_id,
+            phase="lyrics",
+            exc=exc,
+        )
         send_job(timing_job_id, "error", str(exc), videoId=video_id)
 
 
@@ -385,6 +447,15 @@ def run_original_audio_timing_inline(video_id, output_dir, source_path, timing_r
         run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timing_request)
     except Exception as exc:
         LOGGER.exception("job=%s could not prepare source timing", timing_request["jobId"])
+        record_diagnostic(
+            "error",
+            "lyrics_source_prepare_failed",
+            str(exc),
+            job_id=timing_request["jobId"],
+            video_id=video_id,
+            phase="lyrics",
+            exc=exc,
+        )
         send_job(timing_request["jobId"], "error", str(exc), videoId=video_id)
     finally:
         timing_temp.cleanup()
@@ -397,6 +468,15 @@ def start_original_audio_timing_thread(video_id, output_dir, source_path, timing
         normalize_timing_audio(timing_request["jobId"], source_path, timing_audio_path)
     except Exception as exc:
         LOGGER.exception("job=%s could not prepare parallel source timing", timing_request["jobId"])
+        record_diagnostic(
+            "error",
+            "parallel_lyrics_source_prepare_failed",
+            str(exc),
+            job_id=timing_request["jobId"],
+            video_id=video_id,
+            phase="lyrics",
+            exc=exc,
+        )
         send_job(timing_request["jobId"], "error", str(exc), videoId=video_id)
         timing_temp.cleanup()
         return None

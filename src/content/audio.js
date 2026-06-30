@@ -168,6 +168,12 @@ function playCustomAudio(userInitiated = false) {
       if (error?.name === "AbortError" || syncedVideo?.seeking) return;
       if (playBlocked) return;
       playBlocked = true;
+      recordDiagnostic("warning", "custom_audio_play_blocked", error?.message || "Separated audio could not start.", {
+        errorName: error?.name || "",
+        userInitiated,
+        readyState: syncedVideo?.readyState ?? "",
+        paused: Boolean(syncedVideo?.paused),
+      });
       stemEnabled = { instrumental: true, vocals: true };
       setSourceMode("original");
       setProcessStatus(
@@ -330,6 +336,11 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
           || syncedVideo?.seeking
           || audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA
         ) return;
+        recordDiagnostic("warning", "custom_audio_interrupted", `The ${stem} stem was interrupted.`, {
+          stem,
+          readyState: audio.readyState,
+          networkState: audio.networkState,
+        });
         stemEnabled = { instrumental: true, vocals: true };
         setSourceMode("original");
         setProcessStatus("Separated audio was interrupted. Using original YouTube audio.", "info");
@@ -338,6 +349,13 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
     audio.addEventListener("playing", clearCustomAudioInterruptionTimer);
     audio.addEventListener("ended", () => {
       if (customAudio[stem] !== audio || sourceMode !== "custom" || !syncedVideo || syncedVideo.ended) return;
+      recordDiagnostic("error", "custom_audio_ended_early", `The ${stem} stem ended before YouTube ended.`, {
+        stem,
+        audioDuration: audio.duration,
+        audioTime: audio.currentTime,
+        videoDuration: syncedVideo.duration,
+        videoTime: syncedVideo.currentTime,
+      });
       stemEnabled = { instrumental: true, vocals: true };
       setSourceMode("original");
       setProcessStatus("Separated audio ended early. Using original YouTube audio.", "error");
@@ -345,6 +363,13 @@ function prepareCustomAudio(urls, readyMessage = "Separated audio ready. Synchro
     audio.addEventListener("error", () => {
       if (customAudio[stem] !== audio) return;
       customAudioReady = false;
+      recordDiagnostic("error", "custom_audio_load_failed", `The ${stem} track failed to load.`, {
+        stem,
+        errorCode: audio.error?.code ?? "",
+        errorMessage: audio.error?.message || "",
+        networkState: audio.networkState,
+        readyState: audio.readyState,
+      });
       setDebugJobProcess(debugJobId, "audioLoad", false, {
         message: `The ${stem} track failed to load.`,
       });

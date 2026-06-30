@@ -53,6 +53,9 @@ function checkSavedResults() {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (cacheCheckJobId !== jobId) return;
     if (!response?.ok || error) {
+      recordDiagnostic("warning", "cache_check_failed", error || "Could not check saved results.", {
+        jobId,
+      });
       clearMonitorJob(jobId);
       cacheCheckJobId = null;
       cacheCheckComplete = true;

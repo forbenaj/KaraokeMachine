@@ -6,6 +6,7 @@ import uuid
 
 from .cache import is_complete_file, unlink_best_effort
 from .constants import FFMPEG_TIMEOUT_SECONDS, FFPROBE_TIMEOUT_SECONDS, STEM_MP3_BITRATE
+from .diagnostics import record_diagnostic
 from .logging_setup import LOGGER
 from .messaging import send_job
 from .processes import subprocess_creationflags
@@ -101,11 +102,25 @@ def resolve_cached_stems(job_id, stem_dir):
         try:
             for path in mp3_paths:
                 validate_stem_mp3(path)
-        except RuntimeError:
+        except RuntimeError as exc:
             LOGGER.exception("job=%s cached MP3 stems are invalid; rebuilding", job_id)
+            record_diagnostic(
+                "warning",
+                "invalid_cached_stems",
+                "Cached MP3 stems are invalid; rebuilding them.",
+                job_id=job_id,
+                details={"stemDir": str(stem_dir), "error": str(exc)},
+            )
             for path in mp3_paths:
                 unlink_best_effort(path, "invalid cached MP3 cleanup")
             if any(is_complete_file(path) for path in mp3_paths):
+                record_diagnostic(
+                    "error",
+                    "invalid_cached_stems_locked",
+                    "Cached stems are invalid but still locked after cleanup.",
+                    job_id=job_id,
+                    details={"stemDir": str(stem_dir)},
+                )
                 raise RuntimeError(
                     "Cached stems are invalid but locked by another process. "
                     "Close media players using them, then retry."

@@ -228,6 +228,7 @@ function updateWorkspaceLayout() {
 
 function applyState() {
   document.documentElement.classList.toggle(ROOT_CLASS, enabled);
+  if (!enabled) document.documentElement.classList.remove(BACKGROUND_OK_CLASS);
 
   const button = document.getElementById(BUTTON_ID);
   if (button) {

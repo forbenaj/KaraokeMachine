@@ -29,6 +29,9 @@
   --dk-page-bg:
     radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1px),
     linear-gradient(135deg, var(--dk-yellow) 0%, var(--dk-cyan) 50%, var(--dk-magenta) 100%);
+  --dk-page-bg-muted:
+    radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1px),
+    linear-gradient(135deg, #e4e4e4 0%, #b9b9b9 50%, #777777 100%);
 
   --dk-focus-ring: 2px solid #8dafff;
   --dk-overlay-shadow: 0 3px 4px rgba(0, 0, 0, 0.95), 0 0 18px rgba(218, 95, 165, 0.85);
@@ -133,8 +136,8 @@ html.dkaraoke-enabled {
   --yt-spec-general-background-b: transparent !important;
   --yt-spec-general-background-c: transparent !important;
   color-scheme: light;
-  background-color: var(--dk-yellow) !important;
-  background-image: var(--dk-page-bg) !important;
+  background-color: #d0d0d0 !important;
+  background-image: var(--dk-page-bg-muted) !important;
   background-size: 8px 8px, 100% 100% !important;
   background-attachment: fixed !important;
 }
@@ -142,12 +145,19 @@ html.dkaraoke-enabled {
 html.dkaraoke-enabled body,
 html[dark].dkaraoke-enabled body {
   color: var(--dk-ink) !important;
-  background-color: var(--dk-yellow) !important;
-  background-image: var(--dk-page-bg) !important;
+  background-color: #d0d0d0 !important;
+  background-image: var(--dk-page-bg-muted) !important;
   background-size: 8px 8px, 100% 100% !important;
   background-attachment: fixed !important;
   animation: none !important;
   font-family: var(--dk-body-font) !important;
+}
+
+html.dkaraoke-enabled.dkaraoke-background-ok,
+html.dkaraoke-enabled.dkaraoke-background-ok body,
+html[dark].dkaraoke-enabled.dkaraoke-background-ok body {
+  background-color: var(--dk-yellow) !important;
+  background-image: var(--dk-page-bg) !important;
 }
 
 html.dkaraoke-enabled body > ytd-app,
@@ -182,6 +192,12 @@ html.dkaraoke-enabled #masthead-container,
 html[dark].dkaraoke-enabled #masthead-container,
 html.dkaraoke-enabled ytd-masthead,
 html[dark].dkaraoke-enabled ytd-masthead,
+html.dkaraoke-enabled ytd-masthead #background,
+html[dark].dkaraoke-enabled ytd-masthead #background,
+html.dkaraoke-enabled ytd-masthead #frosted-glass,
+html[dark].dkaraoke-enabled ytd-masthead #frosted-glass,
+html.dkaraoke-enabled ytd-masthead #container,
+html[dark].dkaraoke-enabled ytd-masthead #container,
 html.dkaraoke-enabled ytd-masthead > #container.ytd-masthead,
 html[dark].dkaraoke-enabled ytd-masthead > #container.ytd-masthead {
   border: 0 !important;
@@ -192,6 +208,19 @@ html[dark].dkaraoke-enabled ytd-masthead > #container.ytd-masthead {
   box-shadow: none !important;
   backdrop-filter: none !important;
   filter: none !important;
+}
+
+html.dkaraoke-enabled #masthead-container::before,
+html.dkaraoke-enabled #masthead-container::after,
+html.dkaraoke-enabled ytd-masthead::before,
+html.dkaraoke-enabled ytd-masthead::after,
+html.dkaraoke-enabled ytd-masthead > #container.ytd-masthead::before,
+html.dkaraoke-enabled ytd-masthead > #container.ytd-masthead::after {
+  display: none !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  content: none !important;
 }
 
 html.dkaraoke-enabled ytd-searchbox #container,

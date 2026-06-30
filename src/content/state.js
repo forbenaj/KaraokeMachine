@@ -1,4 +1,5 @@
 const ROOT_CLASS = "dkaraoke-enabled";
+const BACKGROUND_OK_CLASS = "dkaraoke-background-ok";
 const BUTTON_ID = "dkaraoke-toggle";
 const MENU_ID = "dkaraoke-menu";
 const LEFT_PANEL_ID = "dkaraoke-left-panel";

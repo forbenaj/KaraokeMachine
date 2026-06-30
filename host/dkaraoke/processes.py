@@ -5,6 +5,7 @@ import threading
 import time
 
 from .constants import ROFORMER_REMAINING_TIME_RE, ROFORMER_TOTAL_TIME_RE
+from .diagnostics import record_diagnostic
 from .logging_setup import LOGGER
 
 def format_remaining_time(seconds):
@@ -45,6 +46,12 @@ def terminate_process_tree(process, label):
     if process.poll() is not None:
         return
     LOGGER.warning("terminating timed-out process label=%s pid=%s", label, process.pid)
+    record_diagnostic(
+        "warning",
+        "process_tree_terminated",
+        "Terminating a timed-out child process.",
+        details={"label": label, "pid": process.pid},
+    )
     if os.name == "nt":
         try:
             subprocess.run(
@@ -92,6 +99,12 @@ def stream_process_lines(process, label, timeout_seconds):
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
+            record_diagnostic(
+                "error",
+                "process_timeout",
+                f"{label} timed out after {timeout_seconds // 60} minutes.",
+                details={"label": label, "timeoutSeconds": timeout_seconds},
+            )
             terminate_process_tree(process, label)
             raise TimeoutError(f"{label} timed out after {timeout_seconds // 60} minutes.")
         try:

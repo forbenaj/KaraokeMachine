@@ -46,8 +46,13 @@ function updatePlaybackMonitor() {
     else messages.push("Ready!");
   }
   status.textContent = messages.join("; ");
+  const monitorState = busy ? "busy" : prompt ? "prompt" : playing ? "playing" : paused ? "paused" : "ready";
   monitor.dataset.count = String(messages.length);
-  monitor.dataset.state = busy ? "busy" : prompt ? "prompt" : playing ? "playing" : paused ? "paused" : "ready";
+  monitor.dataset.state = monitorState;
+  document.documentElement.classList.toggle(
+    BACKGROUND_OK_CLASS,
+    enabled && ["ready", "playing", "paused"].includes(monitorState)
+  );
   monitor.setAttribute("aria-label", status.textContent);
   monitor.title = prompt
     ? "Press me to Karaokize this song."

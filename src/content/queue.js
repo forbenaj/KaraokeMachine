@@ -115,7 +115,11 @@ function updateQueueUI(nextItems = queueItems) {
 
 function refreshQueueState() {
   chrome.runtime.sendMessage({ type: "dkaraoke-get-queue" }, (response) => {
-    if (chrome.runtime.lastError || !response?.ok) return;
+    const error = chrome.runtime.lastError?.message || response?.error;
+    if (error || !response?.ok) {
+      recordDiagnostic("warning", "queue_refresh_failed", error || "Queue refresh returned no usable response.");
+      return;
+    }
     updateQueueUI(response.queue || []);
   });
 }

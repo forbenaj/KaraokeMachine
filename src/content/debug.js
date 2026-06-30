@@ -12,6 +12,7 @@ const DEBUG_PROCESS_DEFINITIONS = [
 const DEBUG_PHASE_KEYS = new Set(["cache", "download", "separate", "convert", "lyricsSearch", "lyricsTiming"]);
 const DEBUG_TERMINAL_STATUSES = new Set(["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"]);
 const DEBUG_MAX_LOG_ENTRIES = 180;
+const DIAGNOSTIC_LEVELS = new Set(["warning", "error"]);
 
 function debugTimestamp() {
   return new Date().toLocaleTimeString([], {
@@ -19,6 +20,50 @@ function debugTimestamp() {
     minute: "2-digit",
     second: "2-digit",
   });
+}
+
+function diagnosticLevel(level) {
+  const value = String(level || "info").toLowerCase();
+  return DIAGNOSTIC_LEVELS.has(value) ? value : "info";
+}
+
+function diagnosticText(value, limit = 1000) {
+  const text = String(value || "").replace(/\r/g, "\\r").replace(/\n/g, "\\n");
+  return text.length > limit ? `${text.slice(0, limit)}...<truncated ${text.length - limit} chars>` : text;
+}
+
+function diagnosticDetails(details = {}) {
+  if (!details || typeof details !== "object") return {};
+  return Object.fromEntries(Object.entries(details).map(([key, value]) => {
+    if (typeof value === "boolean" || typeof value === "number" || value === null) {
+      return [diagnosticText(key, 120), value];
+    }
+    return [diagnosticText(key, 120), diagnosticText(value)];
+  }));
+}
+
+function recordDiagnostic(level, event, message, details = {}) {
+  const normalizedLevel = diagnosticLevel(level);
+  if (!DIAGNOSTIC_LEVELS.has(normalizedLevel)) return;
+  const safeDetails = diagnosticDetails(details);
+  chrome.runtime.sendMessage({
+    type: "dkaraoke-record-diagnostic",
+    source: "content",
+    level: normalizedLevel,
+    event: diagnosticText(event, 120),
+    message: diagnosticText(message),
+    jobId: diagnosticText(details.jobId || "", 120),
+    videoId: currentVideoId(),
+    phase: diagnosticText(details.phase || "", 80),
+    details: {
+      ...safeDetails,
+      enabled,
+      sourceMode,
+      customAudioReady,
+      processing,
+      path: location.pathname,
+    },
+  }, () => void chrome.runtime.lastError);
 }
 
 function debugProcessLabel(key) {
