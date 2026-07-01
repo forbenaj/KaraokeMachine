@@ -389,6 +389,7 @@ def normalized_original_timing_request(lyrics_timing):
         "timingSource": timing_source,
         "timingSchedule": normalize_timing_pipeline_schedule(lyrics_timing.get("timingSchedule")),
         "title": str(lyrics_timing.get("title") or ""),
+        "artist": str(lyrics_timing.get("artist") or ""),
         "duration": lyrics_timing.get("duration"),
     }
 
@@ -406,6 +407,7 @@ def run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timin
             send_job(timing_job_id, "status", "Searching LRCLIB for lyrics...", phase="lyrics")
             provider_lyrics = fetch_lrclib_lyrics({
                 "title": timing_request["title"],
+                "artist": timing_request.get("artist") or "",
                 "duration": timing_request["duration"],
             }, output_dir)
         final_text = requested_text.strip() or str((provider_lyrics or {}).get("text") or "").strip()

@@ -14,6 +14,7 @@ function startKaraokize() {
     jobId,
     url: location.href,
     title: currentSongTitle(),
+    artist: currentSongArtist(),
     lyricsTiming
   }, (response) => {
     const error = chrome.runtime.lastError?.message || response?.error;

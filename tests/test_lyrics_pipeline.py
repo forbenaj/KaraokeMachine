@@ -122,6 +122,38 @@ class LrcParsingTests(unittest.TestCase):
 
         self.assertGreaterEqual(score, 0.88)
 
+    def test_lrclib_rejects_short_title_embedded_in_venue_without_artist(self):
+        score = host.lrclib_candidate_score(
+            {
+                "trackName": "Give You My Lovin' (FM Broadcast The Metro Chicago 12th November 1994)",
+                "artistName": "Mazzy Star",
+                "duration": 242,
+                "plainLyrics": "Give you my lovin'",
+            },
+            {
+                "title": "Chicago",
+                "artist": "",
+                "duration": 246,
+            },
+        )
+
+        self.assertEqual(score, -1.0)
+
+    def test_lrclib_explicit_artist_hint_ranks_single_word_song(self):
+        variants = host.lyrics.lrclib_metadata_variants({
+            "title": "Chicago",
+            "artist": "Michael Jackson",
+            "duration": 246,
+        })
+        queries = host.lyrics.lrclib_search_queries(variants)
+
+        self.assertEqual(variants[0]["title"], "Chicago")
+        self.assertEqual(variants[0]["artist"], "Michael Jackson")
+        self.assertEqual(queries[0], {
+            "track_name": "Chicago",
+            "artist_name": "Michael Jackson",
+        })
+
     def test_lrclib_search_stops_after_confident_primary_match(self):
         candidate = {
             "id": 1,
@@ -168,6 +200,37 @@ class LrcParsingTests(unittest.TestCase):
         self.assertEqual(result["text"], "Look at the stars")
         self.assertEqual(result["artist"], "Coldplay")
         self.assertGreaterEqual(result["matchScore"], 0.88)
+
+    def test_lrclib_force_refresh_ignores_and_replaces_cached_lyrics(self):
+        candidate = {
+            "id": 3,
+            "trackName": "Chicago",
+            "artistName": "Michael Jackson",
+            "albumName": "Xscape",
+            "duration": 246,
+            "plainLyrics": "I met her on my way to Chicago",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            (output_dir / "lrclib_lyrics.json").write_text(json.dumps({
+                "text": "Wrong cached lyrics",
+                "segments": [],
+                "source": "lrclib",
+                "title": "Give You My Lovin'",
+                "artist": "Mazzy Star",
+            }), encoding="utf-8")
+            with patch.object(host.lyrics, "urlopen", return_value=JsonResponse([candidate])) as urlopen:
+                result = host.fetch_lrclib_lyrics(
+                    {"title": "Chicago", "artist": "Michael Jackson", "duration": 246},
+                    output_dir,
+                    force_refresh=True,
+                )
+
+            cached = json.loads((output_dir / "lrclib_lyrics.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(urlopen.call_count, 1)
+        self.assertEqual(result["text"], "I met her on my way to Chicago")
+        self.assertEqual(cached["artist"], "Michael Jackson")
 
     def test_silero_vad_segments_distribute_lines_over_vocal_activity(self):
         segments = host.lyrics.build_silero_vad_segments(
@@ -276,12 +339,14 @@ class PipelineOrderingTests(unittest.TestCase):
                     "jobId": "lyrics-job",
                     "url": "https://www.youtube.com/watch?v=abcdefghijk",
                     "title": "Coldplay - Yellow",
+                    "artist": "",
                     "duration": 267,
                 })
 
             fetch_lrclib_lyrics.assert_called_once_with(
-                {"title": "Coldplay - Yellow", "duration": 267},
+                {"title": "Coldplay - Yellow", "artist": "", "duration": 267},
                 output_dir,
+                force_refresh=False,
             )
             self.assertEqual(send_job.call_args.args[1], "lyrics")
 
@@ -760,13 +825,14 @@ class PipelineOrderingTests(unittest.TestCase):
                         "timingMethod": "ctc",
                         "timingSource": "original",
                         "title": "Artist - Song",
+                        "artist": "Artist",
                         "duration": 123,
                     },
                 )
 
             self.assertTrue(timing_complete.wait(2))
             fetch_lrclib.assert_called_once_with(
-                {"title": "Artist - Song", "duration": 123},
+                {"title": "Artist - Song", "artist": "Artist", "duration": 123},
                 output_dir,
             )
 

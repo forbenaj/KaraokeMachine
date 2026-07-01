@@ -401,6 +401,7 @@ function postDownloadToHost(job) {
         jobId: job.jobId,
         url: job.url,
         title: job.title || "YouTube song",
+        artist: job.artist || "",
         cookies,
         lyricsTiming: job.lyricsTiming || null
       });
@@ -549,6 +550,7 @@ function karaokize(message, tabId, sendResponse) {
           timingSource: "original",
           timingSchedule: normalizeTimingSchedule(rawLyricsTiming.timingSchedule),
           title: rawLyricsTiming.title || "",
+          artist: rawLyricsTiming.artist || "",
           duration: Number.isFinite(rawLyricsTiming.duration) ? rawLyricsTiming.duration : null,
         }
       : null;
@@ -559,6 +561,7 @@ function karaokize(message, tabId, sendResponse) {
     url: message.url,
     videoId: videoIdFromUrl(message.url),
     title: message.title || "YouTube song",
+    artist: message.artist || "",
     status: activeDownloadJobId ? "queued" : "queued",
     message: activeDownloadJobId ? "Queued behind another song." : "Waiting to start...",
     phase: "queue",
@@ -618,7 +621,9 @@ function searchLrclib(message, tabId, sendResponse) {
       jobId: message.jobId,
       url: message.url,
       title: message.title || "",
-      duration: Number.isFinite(message.duration) ? message.duration : null
+      artist: message.artist || "",
+      duration: Number.isFinite(message.duration) ? message.duration : null,
+      forceRefresh: message.forceRefresh === true
     });
     sendResponse({ ok: true });
   } catch (error) {

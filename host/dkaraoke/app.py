@@ -29,8 +29,9 @@ def execute_message(message):
         video_id = video_id_from_url(url)
         lyrics = fetch_lrclib_lyrics({
             "title": str(message.get("title") or ""),
+            "artist": str(message.get("artist") or ""),
             "duration": message.get("duration"),
-        }, app_download_dir(video_id))
+        }, app_download_dir(video_id), force_refresh=message.get("forceRefresh") is True)
         send_job(
             job_id, "lyrics", lyrics.get("message") or "LRCLIB search complete.",
             lyrics=lyrics, videoId=video_id,

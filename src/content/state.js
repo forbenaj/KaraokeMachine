@@ -752,6 +752,42 @@ function currentSongTitle() {
     || document.title.replace(/\s*-\s*YouTube\s*$/, "").trim();
 }
 
+function artistFromYouTubeChannelName(value) {
+  const channel = String(value || "").replace(/\s+/g, " ").trim();
+  if (!channel) return "";
+  const topicMatch = channel.match(/^(.+?)\s*-\s*Topic$/i);
+  if (topicMatch) return topicMatch[1].trim();
+  const vevoMatch = channel.match(/^(.+?)VEVO$/i);
+  if (vevoMatch) return vevoMatch[1].trim();
+  return "";
+}
+
+function elementTextOrContent(element) {
+  return element?.textContent || element?.getAttribute?.("content") || "";
+}
+
+function currentSongArtist() {
+  const selectors = [
+    "ytd-watch-metadata #owner ytd-channel-name #text a",
+    "ytd-watch-metadata #owner ytd-channel-name #text",
+    "ytd-watch-metadata #owner #channel-name a",
+    "ytd-watch-metadata #owner #channel-name #text",
+    "ytd-video-owner-renderer ytd-channel-name #text a",
+    "ytd-video-owner-renderer ytd-channel-name #text",
+    "ytd-video-owner-renderer #channel-name a",
+    "ytd-video-owner-renderer #channel-name #text",
+    "#upload-info ytd-channel-name #text",
+    "#upload-info #channel-name #text",
+    "ytd-watch-metadata [itemprop='author'] [itemprop='name']",
+    "meta[itemprop='name']",
+  ];
+  for (const selector of selectors) {
+    const artist = artistFromYouTubeChannelName(elementTextOrContent(document.querySelector(selector)));
+    if (artist) return artist;
+  }
+  return "";
+}
+
 function currentVideoDuration() {
   const duration = syncedVideo?.duration ?? getYouTubeVideo()?.duration;
   return Number.isFinite(duration) && duration > 0 ? duration : null;

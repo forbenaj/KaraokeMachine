@@ -150,6 +150,14 @@ def token_similarity(left, right):
     return max(dice, containment * 0.92)
 
 
+def normalized_tokens(value):
+    return normalize_match_text(value).split()
+
+
+def exact_title_match(left, right):
+    return normalize_match_text(left) == normalize_match_text(right)
+
+
 def metadata_similarity(left, right):
     left_normalized = normalize_match_text(left)
     right_normalized = normalize_match_text(right)
@@ -218,9 +226,12 @@ def version_similarity(metadata, candidate):
 
 def lrclib_candidate_match(candidate, metadata):
     title_score = metadata_similarity(metadata.get("title"), candidate.get("trackName"))
+    exact_title = exact_title_match(metadata.get("title"), candidate.get("trackName"))
     stripped_title = strip_feature_text(metadata.get("title"))
     if stripped_title and stripped_title != metadata.get("title"):
+        stripped_exact_title = exact_title_match(stripped_title, candidate.get("trackName"))
         title_score = max(title_score, metadata_similarity(stripped_title, candidate.get("trackName")))
+        exact_title = exact_title or stripped_exact_title
 
     artist_score = metadata_similarity(metadata.get("artist"), candidate.get("artistName"))
     primary_artist = primary_artist_name(metadata.get("artist"))
@@ -238,9 +249,9 @@ def lrclib_candidate_match(candidate, metadata):
 
     if metadata.get("artist"):
         score = (
-            title_score * 0.46
-            + artist_score * 0.25
-            + duration_score * 0.17
+            title_score * 0.51
+            + artist_score * 0.28
+            + duration_score * 0.09
             + version_score * 0.08
             + album_score * 0.04
             + lyrics_bonus
@@ -249,13 +260,17 @@ def lrclib_candidate_match(candidate, metadata):
         valid = title_score >= 0.58 and artist_score >= 0.35
     else:
         score = (
-            title_score * 0.62
-            + duration_score * 0.23
+            title_score * 0.78
+            + duration_score * 0.06
             + version_score * 0.10
             + lyrics_bonus
             - instrumental_penalty
         )
-        valid = title_score >= 0.68
+        title_token_count = len(normalized_tokens(metadata.get("title")))
+        if title_token_count <= 2:
+            valid = exact_title and title_score >= 0.90
+        else:
+            valid = title_score >= 0.78
 
     if candidate.get("instrumental") and not lyric_text_available(candidate):
         valid = False
@@ -271,6 +286,7 @@ def lrclib_candidate_match(candidate, metadata):
         "durationDifference": None if duration_difference is None else round(duration_difference, 3),
         "version": round(version_score, 3),
         "synced": bool(candidate.get("syncedLyrics")),
+        "exactTitle": exact_title,
     }
 
 
@@ -358,9 +374,11 @@ def append_metadata_variant(variants, seen, title, artist, duration, raw_title):
 def lrclib_metadata_variants(info):
     if isinstance(info, dict):
         raw_title = str(info.get("title") or "")
+        raw_artist = str(info.get("artist") or "")
         duration = parse_duration(info.get("duration"))
     else:
         raw_title = str(info or "")
+        raw_artist = ""
         duration = None
     raw_title = re.sub(r"\s*-\s*YouTube\s*$", "", raw_title, flags=re.IGNORECASE)
     cleaned = clean_metadata_text(raw_title)
@@ -368,7 +386,16 @@ def lrclib_metadata_variants(info):
     seen = set()
 
     primary = song_metadata_from_title(raw_title, duration)
-    append_metadata_variant(variants, seen, primary["title"], primary["artist"], duration, cleaned)
+    explicit_artist = clean_metadata_text(raw_artist)
+    append_metadata_variant(
+        variants, seen,
+        primary["title"],
+        explicit_artist or primary["artist"],
+        duration,
+        cleaned,
+    )
+    if explicit_artist and primary.get("artist") and explicit_artist != primary["artist"]:
+        append_metadata_variant(variants, seen, primary["title"], primary["artist"], duration, cleaned)
 
     separator = TITLE_SEPARATOR_RE.search(cleaned)
     if separator:
@@ -462,14 +489,28 @@ def rank_lrclib_candidates(candidates, metadata_variants):
             continue
         match, metadata = max(matches, key=lambda item: item[0]["score"])
         ranked.append((match["score"], match, candidate, metadata))
-    ranked.sort(key=lambda item: item[0], reverse=True)
+    ranked.sort(
+        key=lambda item: (
+            item[0],
+            1 if item[1].get("exactTitle") else 0,
+            1 if item[1].get("synced") else 0,
+            -(item[1].get("durationDifference") if item[1].get("durationDifference") is not None else 9999),
+        ),
+        reverse=True,
+    )
     return ranked
 
 
-def fetch_lrclib_lyrics(info, output_dir):
+def write_lrclib_refresh_miss(cache_path, result, force_refresh):
+    if force_refresh:
+        write_json_cache(cache_path, result)
+    return result
+
+
+def fetch_lrclib_lyrics(info, output_dir, force_refresh=False):
     cache_path = output_dir / "lrclib_lyrics.json"
     cached = read_json_cache(cache_path)
-    if cached and cached.get("source") == "lrclib" and cached.get("text"):
+    if not force_refresh and cached and cached.get("source") == "lrclib" and cached.get("text"):
         normalized = normalize_cached_lyrics(cached)
         if normalized != cached:
             write_json_cache(cache_path, normalized)
@@ -477,7 +518,11 @@ def fetch_lrclib_lyrics(info, output_dir):
 
     metadata_variants = lrclib_metadata_variants(info)
     if not metadata_variants:
-        return {"text": "", "segments": [], "source": "none", "message": "Could not identify the song for LRCLIB."}
+        return write_lrclib_refresh_miss(
+            cache_path,
+            {"text": "", "segments": [], "source": "none", "message": "Could not identify the song for LRCLIB."},
+            force_refresh,
+        )
     queries = lrclib_search_queries(metadata_variants)
     candidates_by_key = {}
     ranked = []
@@ -492,7 +537,11 @@ def fetch_lrclib_lyrics(info, output_dir):
             break
 
     if not ranked or ranked[0][0] < LRCLIB_MIN_ACCEPTED_SCORE:
-        return {"text": "", "segments": [], "source": "none", "message": "LRCLIB found no reliable match."}
+        return write_lrclib_refresh_miss(
+            cache_path,
+            {"text": "", "segments": [], "source": "none", "message": "LRCLIB found no reliable match."},
+            force_refresh,
+        )
 
     score, match, candidate, metadata = ranked[0]
     synced = candidate.get("syncedLyrics") or ""
@@ -500,7 +549,11 @@ def fetch_lrclib_lyrics(info, output_dir):
     segments = parse_lrc_segments(synced, candidate.get("duration") or metadata.get("duration"))
     text = "\n".join(segment["text"] for segment in segments) if segments else plain.strip()
     if not text:
-        return {"text": "", "segments": [], "source": "none", "message": "LRCLIB match has no lyrics."}
+        return write_lrclib_refresh_miss(
+            cache_path,
+            {"text": "", "segments": [], "source": "none", "message": "LRCLIB match has no lyrics."},
+            force_refresh,
+        )
     result = {
         "text": text,
         "segments": segments,

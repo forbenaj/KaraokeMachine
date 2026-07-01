@@ -354,7 +354,9 @@ function searchLrclibLyrics() {
     jobId,
     url: location.href,
     title: currentSongTitle(),
-    duration: currentVideoDuration()
+    artist: currentSongArtist(),
+    duration: currentVideoDuration(),
+    forceRefresh: true
   }, (response) => {
     const error = chrome.runtime.lastError?.message || response?.error;
     if (lyricsSearchJobId !== jobId) return;
@@ -449,6 +451,7 @@ function prepareKaraokizeLyricsTiming() {
     timingSource,
     timingSchedule,
     title: currentSongTitle(),
+    artist: currentSongArtist(),
     duration: currentVideoDuration(),
   };
 }
