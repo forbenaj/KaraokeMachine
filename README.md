@@ -32,9 +32,45 @@ Then load the extension:
 
 Chrome loads the extension directly from this directory. After changing extension files, use **Reload** on `chrome://extensions` and refresh YouTube. The fixed manifest key keeps the unpacked extension ID consistent with the registered native host.
 
+## Hardware and processing expectations
+
+Karaoke Machine! can run on CPU, but audio separation and local lyric timing are machine-learning workloads. A CUDA-capable NVIDIA GPU is strongly recommended for regular use.
+
+This is my PC:
+
+```text
+CPU: Intel Core i7-13620H, 10 cores / 16 logical processors
+RAM: 16 GB
+GPU: NVIDIA GeForce RTX 3050 6GB Laptop GPU
+Driver: NVIDIA 595.79 (`nvidia-smi` CUDA Version 13.2)
+Runtime: PyTorch 2.5.1+cu124, TorchAudio 2.5.1+cu124, torch CUDA 12.4
+```
+
+Larger GPUs, especially 8 GB VRAM or more, are preferable for long tracks or when running lyric timing in parallel with stem separation.
+
+
+Recommended hardware:
+
+- **Best experience:** recent NVIDIA GPU with CUDA support, 6 GB VRAM minimum tested, 8 GB+ VRAM preferred, 16 GB+ system RAM, SSD storage, and the `cu124` Torch build when the driver supports it.
+- **CPU-only fallback:** supported through `.\setup-roformer.ps1` without `-TorchBuild`, but expect separation and CTC timing to be much slower. Long songs may approach the built-in timeouts.
+- **Disk:** reserve several GB for `.venv-roformer`, `.stem-models`, the 913 MB RoFormer checkpoint, Torch/TorchAudio wheels, temporary source audio, temporary WAV stems, and per-song MP3 caches.
+
+Where the load happens:
+
+- **RoFormer stem separation:** uses `--device auto`, so it chooses CUDA when `torch.cuda.is_available()` is true and falls back to CPU otherwise. Audio is normalized to stereo 44.1 kHz float WAV, processed with chunk size `352800` and overlap `2`, then converted to 192 kbps MP3 stems.
+- **CTC lyric timing:** TorchAudio MMS forced alignment also chooses CUDA automatically when available. It can produce word timing when alignment spans are available.
+- **Silero VAD timing:** lighter than CTC; it reads 16 kHz audio and sets Torch to one CPU thread. It produces line-level vocal-activity timing, not word-level CTC alignment.
+- **FFmpeg and yt-dlp:** use CPU, disk, and network. Downloaded source audio is temporary and is removed after stems or timing audio are produced.
+
+Concurrency warnings:
+
+- The download/stem queue runs one song at a time, but original-audio lyric timing can be scheduled before separation (**Lyrics first**) or alongside separation (**Run together**).
+- **Lyrics first** is the safer default on 6 GB GPUs because RoFormer and CTC both use CUDA when available. **Run together** can be faster on larger GPUs, but can also cause CUDA out-of-memory errors or heavy UI/system slowdown.
+- Timeouts are intentionally long: yt-dlp downloads may run up to 2 hours, RoFormer up to 6 hours, and CTC/Silero lyric timing up to 2 hours. Chrome-side job guards are longer than the backend limits so slow local processing can report its own failure.
+
 ## Use
 
-Press **K** beside the YouTube logo to open or close the karaoke workspace. On wide screens it places playback controls to the left of the video and the lyrics editor to the right.
+Press **K** beside the YouTube logo to open or close the karaoke workspace.
 
 Whenever a song opens, Karaoke Machine! checks local results automatically:
 
