@@ -3,6 +3,7 @@ import json
 import re
 import subprocess
 import unicodedata
+import uuid
 from difflib import SequenceMatcher
 from pathlib import Path
 from urllib.parse import urlencode
@@ -28,6 +29,25 @@ LRCLIB_MAX_SEARCH_QUERIES = 4
 LRCLIB_CONFIDENT_SCORE = 0.88
 LRCLIB_MIN_ACCEPTED_SCORE = 0.58
 LRCLIB_SEARCH_TIMEOUT_SECONDS = 12
+LYRICS_FILE_INDEX = "lyrics_files.json"
+LEGACY_LYRIC_FILES = {
+    "lrclib": {
+        "fileName": "lrclib_lyrics.json",
+        "label": "LRCLIB",
+        "kind": "lrclib",
+    },
+    "ctc": {
+        "fileName": "ctc_lyrics.json",
+        "label": "CTC",
+        "kind": "ctc",
+    },
+    "silero": {
+        "fileName": "silero_lyrics.json",
+        "label": "SILERO",
+        "kind": "silero",
+    },
+}
+LEGACY_EXTRACTED_LYRICS_FILE = "lyrics.json"
 DASH_TRANSLATION = str.maketrans({
     "\u2010": "-",
     "\u2011": "-",
@@ -352,6 +372,237 @@ def normalize_cached_lyrics(payload):
     if "local-ctc" in source and timing_version != LYRICS_TIMING_VERSION:
         return line_only_lyrics(payload)
     return payload
+
+
+def lyrics_payload_summary(payload):
+    payload = normalize_cached_lyrics(payload)
+    if not isinstance(payload, dict):
+        payload = {}
+    text = str(payload.get("text") or "")
+    segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
+    return {
+        "hasText": bool(text.strip()),
+        "hasSegments": bool(segments),
+        "source": str(payload.get("source") or "manual"),
+    }
+
+
+def clean_lyric_file_label(value, fallback="New lyrics"):
+    label = " ".join(str(value or "").split())
+    if not label:
+        label = fallback
+    return label[:80]
+
+
+def lyric_file_payload(payload):
+    payload = normalize_cached_lyrics(payload)
+    if not isinstance(payload, dict):
+        return {"text": "", "segments": [], "source": "manual"}
+    segments = payload.get("segments") if isinstance(payload.get("segments"), list) else []
+    return {
+        **payload,
+        "text": str(payload.get("text") or ""),
+        "segments": segments,
+        "source": str(payload.get("source") or "manual"),
+    }
+
+
+def read_lyrics_index(output_dir):
+    index = read_json_cache(output_dir / LYRICS_FILE_INDEX)
+    if not isinstance(index, dict):
+        return {"files": []}
+    files = index.get("files")
+    if not isinstance(files, list):
+        files = []
+    return {"files": [item for item in files if isinstance(item, dict)]}
+
+
+def write_lyrics_index(output_dir, index):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    write_json_cache(output_dir / LYRICS_FILE_INDEX, index)
+
+
+def safe_custom_lyrics_name(file_name):
+    value = str(file_name or "")
+    if not re.fullmatch(r"lyrics_custom_[a-f0-9]{12}\.json", value):
+        return ""
+    return value
+
+
+def lyric_file_path(output_dir, file_id):
+    file_id = str(file_id or "")
+    if file_id in LEGACY_LYRIC_FILES:
+        return output_dir / LEGACY_LYRIC_FILES[file_id]["fileName"]
+    index = read_lyrics_index(output_dir)
+    for entry in index["files"]:
+        if str(entry.get("id") or "") == file_id:
+            file_name = safe_custom_lyrics_name(entry.get("fileName"))
+            if file_name:
+                return output_dir / file_name
+    raise FileNotFoundError("Lyrics file was not found.")
+
+
+def legacy_extracted_file_id(payload):
+    payload = payload if isinstance(payload, dict) else {}
+    timing_method = payload.get("timingMethod")
+    source = payload.get("source") or ""
+    if timing_method == "silero-vad" or "local-silero-vad" in source:
+        return "silero"
+    if timing_method == "ctc" or "local-ctc" in source or "local-whisper" in source:
+        return "ctc"
+    return ""
+
+
+def read_dedicated_lyric_payload(output_dir, file_id, metadata):
+    payload = read_json_cache(output_dir / metadata["fileName"])
+    if isinstance(payload, dict):
+        return payload, metadata["fileName"]
+    if file_id in {"ctc", "silero"}:
+        legacy = read_json_cache(output_dir / LEGACY_EXTRACTED_LYRICS_FILE)
+        if legacy_extracted_file_id(legacy) == file_id:
+            return legacy, LEGACY_EXTRACTED_LYRICS_FILE
+    return None, metadata["fileName"]
+
+
+def lyric_file_read_path(output_dir, file_id):
+    file_id = str(file_id or "")
+    if file_id in LEGACY_LYRIC_FILES:
+        payload, file_name = read_dedicated_lyric_payload(output_dir, file_id, LEGACY_LYRIC_FILES[file_id])
+        if isinstance(payload, dict):
+            return output_dir / file_name
+        return output_dir / LEGACY_LYRIC_FILES[file_id]["fileName"]
+    return lyric_file_path(output_dir, file_id)
+
+
+def timing_method_file_id(timing_method):
+    return "silero" if normalize_lyrics_timing_method(timing_method) == "silero-vad" else "ctc"
+
+
+def timing_method_cache_path(output_dir, timing_method):
+    return output_dir / LEGACY_LYRIC_FILES[timing_method_file_id(timing_method)]["fileName"]
+
+
+def read_timing_method_cache(output_dir, timing_method):
+    file_id = timing_method_file_id(timing_method)
+    cached = read_json_cache(timing_method_cache_path(output_dir, timing_method))
+    if isinstance(cached, dict):
+        return cached
+    legacy = read_json_cache(output_dir / LEGACY_EXTRACTED_LYRICS_FILE)
+    if legacy_extracted_file_id(legacy) == file_id:
+        return legacy
+    return None
+
+
+def list_lyric_files(output_dir):
+    files = []
+    for file_id, metadata in LEGACY_LYRIC_FILES.items():
+        payload, file_name = read_dedicated_lyric_payload(output_dir, file_id, metadata)
+        if not isinstance(payload, dict):
+            continue
+        summary = lyrics_payload_summary(payload)
+        if not summary["hasText"] and not summary["hasSegments"]:
+            continue
+        label = clean_lyric_file_label(payload.get("label"), metadata["label"])
+        files.append({
+            "id": file_id,
+            "label": label,
+            "kind": metadata["kind"],
+            "fileName": file_name,
+            **summary,
+        })
+    index = read_lyrics_index(output_dir)
+    for entry in index["files"]:
+        file_id = str(entry.get("id") or "")
+        file_name = safe_custom_lyrics_name(entry.get("fileName"))
+        if not file_id or not file_name:
+            continue
+        payload = read_json_cache(output_dir / file_name) or {}
+        summary = lyrics_payload_summary(payload)
+        label = clean_lyric_file_label(entry.get("label") or payload.get("label"))
+        files.append({
+            "id": file_id,
+            "label": label,
+            "kind": "custom",
+            "fileName": file_name,
+            **summary,
+        })
+    return files
+
+
+def load_lyric_file(output_dir, file_id):
+    path = lyric_file_read_path(output_dir, file_id)
+    payload = lyric_file_payload(read_json_cache(path))
+    return {
+        "file": next((item for item in list_lyric_files(output_dir) if item["id"] == str(file_id)), None),
+        "lyrics": {key: payload.get(key) for key in ("text", "segments", "source", "timingMethod", "timingSource")},
+        "lyricFiles": list_lyric_files(output_dir),
+        "activeLyricsFileId": str(file_id),
+    }
+
+
+def create_lyric_file(output_dir, initial_text="", label="New lyrics"):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    index = read_lyrics_index(output_dir)
+    file_id = f"custom-{uuid.uuid4().hex[:12]}"
+    file_name = f"lyrics_custom_{file_id.split('-', 1)[1]}.json"
+    initial_text = str(initial_text or "")
+    label = clean_lyric_file_label(label)
+    entry = {
+        "id": file_id,
+        "label": label,
+        "kind": "custom",
+        "fileName": file_name,
+    }
+    index["files"].append(entry)
+    write_json_cache(output_dir / file_name, {
+        "text": initial_text,
+        "segments": [],
+        "source": "manual",
+        "label": label,
+        "textHash": hashlib.sha256(initial_text.encode("utf-8")).hexdigest(),
+    })
+    write_lyrics_index(output_dir, index)
+    return load_lyric_file(output_dir, file_id)
+
+
+def save_lyric_file(output_dir, file_id, text, label=""):
+    file_id = str(file_id or "")
+    read_path = lyric_file_read_path(output_dir, file_id)
+    write_path = lyric_file_path(output_dir, file_id)
+    current = lyric_file_payload(read_json_cache(read_path))
+    next_text = str(text or "")
+    next_hash = hashlib.sha256(next_text.encode("utf-8")).hexdigest()
+    fallback_label = next((item.get("label") for item in list_lyric_files(output_dir) if item["id"] == file_id), "")
+    label = clean_lyric_file_label(label or current.get("label"), fallback_label or "New lyrics")
+    old_text = str(current.get("text") or "")
+    old_hash = current.get("textHash")
+    keep_segments = bool(current.get("segments")) and (
+        next_text == old_text or (old_hash and old_hash == next_hash)
+    )
+    payload = {
+        **current,
+        "text": next_text,
+        "segments": current.get("segments") if keep_segments else [],
+        "source": current.get("source") if keep_segments else "manual",
+        "label": label,
+        "textHash": next_hash,
+    }
+    if not keep_segments:
+        payload.pop("timingMethod", None)
+        payload.pop("timingSource", None)
+        payload.pop("timingVersion", None)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if file_id.startswith("custom-"):
+        index = read_lyrics_index(output_dir)
+        for entry in index["files"]:
+            if str(entry.get("id") or "") == file_id:
+                entry["label"] = label
+                break
+        write_lyrics_index(output_dir, index)
+    write_json_cache(write_path, payload)
+    loaded = load_lyric_file(output_dir, file_id)
+    loaded["droppedTimings"] = bool(current.get("segments")) and not keep_segments
+    return loaded
 
 
 def append_metadata_variant(variants, seen, title, artist, duration, raw_title):
@@ -783,8 +1034,8 @@ def prepare_lyrics(
     if timing_source == "original":
         local_source = f"{local_source}-original"
 
-    cached_path = output_dir / "lyrics.json"
-    cached = read_json_cache(cached_path) if not force else None
+    cached_path = timing_method_cache_path(output_dir, timing_method)
+    cached = read_timing_method_cache(output_dir, timing_method) if not force else None
     if cached:
         cache_matches_text = (
             requested_text and cached.get("textHash") == hashlib.sha256(requested_text.encode("utf-8")).hexdigest()
@@ -811,9 +1062,12 @@ def prepare_lyrics(
         "source": source,
         "timingMethod": timing_method,
         "timingSource": timing_source,
+        "label": LEGACY_LYRIC_FILES[timing_method_file_id(timing_method)]["label"],
     }
     digest = hashlib.sha256(final_text.encode("utf-8")).hexdigest()
-    write_json_cache(cached_path, {
+    cached_payload = {
         **result, "textHash": digest, "timingVersion": LYRICS_TIMING_VERSION
-    })
+    }
+    write_json_cache(cached_path, cached_payload)
+    write_json_cache(output_dir / LEGACY_EXTRACTED_LYRICS_FILE, cached_payload)
     return result

@@ -70,6 +70,8 @@ The right section contains the lyrics editor. Its compact control section sits b
 
 - **Lyrics:** show or hide synchronized lyrics over the video.
 - **Lyrics style:** choose Classic, Arcade, or Simple. Classic is the default and shows a three-line window with the current line centered and scrolling upward on line changes.
+- **Lyrics file bar:** choose between saved lyric files for the current video, or press the file-plus button to create a new editable file.
+- **Save:** write the current editor text into the active lyric file. If the text changes from the version that produced saved timings, the timings are cleared so stale synchronization is not shown as valid.
 - **Search LRCLIB:** find lyrics and synchronized line timing for the current song.
 - **Extract timings:** use the selected timing extraction method and audio source to time the current editor text. Original audio is the default and downloads only the source audio needed for timing. Vocal stem mode uses the prepared vocals stem. CTC forced alignment can produce word timing when the aligner exposes character spans; otherwise timed lines are shown without synthetic word timing. Silero VAD produces line-level timing.
 
@@ -92,6 +94,8 @@ separated\mel_band_roformer\audio\instrumental.mp3
 separated\mel_band_roformer\audio\vocals.mp3
 lrclib_lyrics.json
 lyrics.json
+lyrics_files.json
+lyrics_custom_<id>.json
 ```
 
 The downloaded source audio is temporary. `yt-dlp` keeps the best available
@@ -104,6 +108,7 @@ state:
 - Stems missing: download best audio with `yt-dlp` without an intermediate MP3 conversion, separate it, then delete the temporary source.
 - LRCLIB line timing present: display it immediately.
 - Local CTC, Silero VAD, or legacy Whisper timing present: use it as the timing authority.
+- Custom lyric files are listed from `lyrics_files.json` and can be edited independently of the two legacy lyric caches.
 
 The first CTC timing extraction downloads TorchAudio's MMS forced-alignment checkpoint into the standard Torch cache for the active user profile. Silero VAD is installed by `setup-roformer.ps1` and detects vocal activity locally.
 

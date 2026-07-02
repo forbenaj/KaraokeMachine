@@ -13,7 +13,14 @@ from .messaging import NativeMessagingDisconnected, read_message, send_job
 from .paths import begin_stem_job, finish_stem_job, validate_youtube_url, video_id_from_url, app_download_dir
 from .pipeline import check_cache, extract_lyrics_timings, run_download
 from .processes import JobCanceled, cancel_job
-from .lyrics import clean_metadata_text, fetch_lrclib_lyrics
+from .lyrics import (
+    clean_metadata_text,
+    create_lyric_file,
+    fetch_lrclib_lyrics,
+    list_lyric_files,
+    load_lyric_file,
+    save_lyric_file,
+)
 
 YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
 YOUTUBE_METADATA_TIMEOUT_SECONDS = 5
@@ -89,10 +96,52 @@ def execute_message(message):
             app_download_dir(video_id),
             force_refresh=message.get("forceRefresh") is True,
         )
+        output_dir = app_download_dir(video_id)
         send_job(
             job_id, "lyrics", lyrics.get("message") or "LRCLIB search complete.",
-            lyrics=lyrics, videoId=video_id,
+            lyrics=lyrics,
+            lyricFiles=list_lyric_files(output_dir),
+            activeLyricsFileId="lrclib" if lyrics.get("text") else "",
+            videoId=video_id,
         )
+        return
+    if action in {"listLyricFiles", "loadLyricFile", "saveLyricFile", "createLyricFile"}:
+        url = validate_youtube_url(str(message.get("url") or ""))
+        video_id = video_id_from_url(url)
+        output_dir = app_download_dir(video_id)
+        if action == "listLyricFiles":
+            send_job(
+                job_id,
+                "lyricFiles",
+                "Lyrics files loaded.",
+                lyricFiles=list_lyric_files(output_dir),
+                videoId=video_id,
+            )
+            return
+        if action == "loadLyricFile":
+            result = load_lyric_file(output_dir, str(message.get("fileId") or ""))
+            send_job(job_id, "lyricFileLoaded", "Lyrics file loaded.", videoId=video_id, **result)
+            return
+        if action == "saveLyricFile":
+            result = save_lyric_file(
+                output_dir,
+                str(message.get("fileId") or ""),
+                str(message.get("lyricsText") or ""),
+                str(message.get("label") or ""),
+            )
+            message_text = (
+                "Lyrics saved. Timings were cleared because the text changed."
+                if result.get("droppedTimings")
+                else "Lyrics saved."
+            )
+            send_job(job_id, "lyricFileSaved", message_text, videoId=video_id, **result)
+            return
+        result = create_lyric_file(
+            output_dir,
+            str(message.get("lyricsText") or ""),
+            str(message.get("label") or ""),
+        )
+        send_job(job_id, "lyricFileCreated", "New lyrics file created.", videoId=video_id, **result)
         return
     if action == "extractLyricsTimings":
         extract_lyrics_timings(
@@ -126,7 +175,8 @@ def handle_message(message):
         raise ValueError("Missing job ID.")
     supported = {
         "checkCache", "searchLrclib", "extractLyricsTimings",
-        "prepareKaraoke", "cancelJob",
+        "prepareKaraoke", "cancelJob", "listLyricFiles", "loadLyricFile",
+        "saveLyricFile", "createLyricFile",
     }
     if action not in supported:
         raise ValueError("Unsupported backend action.")

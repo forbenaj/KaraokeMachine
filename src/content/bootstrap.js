@@ -53,6 +53,7 @@ chrome.runtime.onMessage.addListener((message) => {
       cacheCheckJobId = null;
       cacheCheckComplete = true;
       karaokizeAvailable = !message.hasStems;
+      updateLyricFiles(message.lyricFiles || [], message.activeLyricsFileId || "");
       if (message.lyrics?.text) {
         lyricsText = message.lyrics.text;
         youtubeLyrics = message.lyrics;
@@ -89,6 +90,10 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.status === "lyricsComplete") {
       timingsProcessing = false;
       timingsJobId = null;
+      updateLyricFiles(
+        message.lyricFiles || lyricFiles,
+        message.activeLyricsFileId || (normalizeTimingMethod(settings.timingExtractionMethod) === "silero-vad" ? "silero" : "ctc"),
+      );
       setLyrics(message.lyrics || { text: lyricsText, segments: [], source: "manual" });
       updateLyricsProcessButtons();
       setProcessing(processing);
@@ -109,6 +114,7 @@ chrome.runtime.onMessage.addListener((message) => {
     if (message.status === "lyrics") {
       lyricsSearchJobId = null;
       youtubeLyrics = message.lyrics || { text: "", segments: [], source: "none" };
+      updateLyricFiles(message.lyricFiles || lyricFiles, message.activeLyricsFileId || (youtubeLyrics.text ? "lrclib" : ""));
       lyricsText = youtubeLyrics.text || "";
       setLyrics(youtubeLyrics);
       updateLyricsProcessButtons();
@@ -128,11 +134,36 @@ chrome.runtime.onMessage.addListener((message) => {
     }
     return;
   }
+  if (lyricFileJobId && message.jobId === lyricFileJobId) {
+    lyricFileJobId = null;
+    if (
+      message.status === "lyricFileLoaded"
+      || message.status === "lyricFileSaved"
+      || message.status === "lyricFileCreated"
+    ) {
+      updateLyricFiles(message.lyricFiles || lyricFiles, message.activeLyricsFileId || activeLyricsFileId);
+      if (message.lyrics) setLyrics(message.lyrics);
+      updateLyricsProcessButtons();
+      setLyricsStatus(
+        message.droppedTimings ? t("lyricsSavedTimingsCleared") : (message.message || t("lyricsFileLoaded")),
+        message.status === "lyricFileSaved" || message.status === "lyricFileCreated" ? "success" : "info",
+      );
+    } else if (message.status === "lyricFiles") {
+      updateLyricFiles(message.lyricFiles || [], activeLyricsFileId);
+      updateLyricsProcessButtons();
+      setLyricsStatus(message.message || t("lyricsFilesLoaded"), "info");
+    } else if (message.status === "error") {
+      updateLyricsProcessButtons();
+      setLyricsStatus(message.message || t("lyricsFileActionFailed"), "error");
+    }
+    return;
+  }
   if (!activeJobId || message.jobId !== activeJobId) return;
 
   if (message.status === "lyricsPreview") {
     if (message.lyrics?.text) {
       lyricsText = message.lyrics.text;
+      updateLyricFiles(message.lyricFiles || lyricFiles, message.activeLyricsFileId || activeLyricsFileId);
       setLyrics(message.lyrics);
     }
     setLyricsStatus(
@@ -165,6 +196,7 @@ chrome.runtime.onMessage.addListener((message) => {
     karaokizeAvailable = !hasFinalStems;
     setProcessing(false);
     if (message.lyrics) {
+      updateLyricFiles(message.lyricFiles || lyricFiles, message.activeLyricsFileId || activeLyricsFileId);
       setLyrics(message.lyrics);
       setLyricsStatus(
         message.lyrics.segments?.length ? t("synchronizedLyricsReady") : t("lyricsLoadedNoTimings"),

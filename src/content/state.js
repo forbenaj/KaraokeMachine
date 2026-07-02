@@ -12,6 +12,11 @@ const PROGRESS_ID = "dkaraoke-process-progress";
 const PROGRESS_FILL_ID = "dkaraoke-process-progress-fill";
 const LYRICS_ID = "dkaraoke-lyrics";
 const LYRICS_TEXT_ID = "dkaraoke-lyrics-text";
+const LYRICS_EDITOR_BODY_ID = "dkaraoke-lyrics-editor-body";
+const LYRICS_FILE_BAR_ID = "dkaraoke-lyrics-file-bar";
+const LYRICS_SAVE_ID = "dkaraoke-save-lyrics";
+const LYRICS_NAME_ID = "dkaraoke-lyrics-name";
+const LYRICS_NEW_FILE_ID = "dkaraoke-new-lyrics-file";
 const LRCLIB_SEARCH_ID = "dkaraoke-search-lrclib";
 const EXTRACT_TIMINGS_ID = "dkaraoke-extract-timings";
 const LYRICS_STATUS_ID = "dkaraoke-lyrics-status";
@@ -118,6 +123,9 @@ let processedSongsSearch = "";
 let lyricsReady = false;
 let lyricsText = "";
 let lyricSegments = [];
+let lyricFiles = [];
+let activeLyricsFileId = "";
+let lyricFileJobId = null;
 let youtubeLyrics = { text: "", segments: [], source: "none" };
 let lyricsSearchJobId = null;
 let lyricAnimationId = null;
@@ -157,6 +165,19 @@ const I18N = {
     extractTimings: "Extract timings",
     extractingTimings: "Extracting timings...",
     lyricsPlaceholder: "LRCLIB lyrics will appear here. You can also paste or type lyrics.",
+    saveLyrics: "Save",
+    savingLyrics: "Saving...",
+    lyricsFileName: "Lyrics file name",
+    lyricsSaved: "Lyrics saved.",
+    lyricsSavedTimingsCleared: "Lyrics saved. Extract timings again for the edited text.",
+    newLyricsFile: "New lyrics",
+    creatingLyricsFile: "Creating...",
+    lyricsFileCreated: "New lyrics file created.",
+    lyricsFileLoaded: "Lyrics file loaded.",
+    lyricsFilesLoaded: "Lyrics files loaded.",
+    lyricsFileActionFailed: "Lyrics file action failed.",
+    lrclibLyricsFile: "LRCLIB lyrics",
+    extractedTimingsFile: "Extracted timings",
     lyricsStyle: "Lyrics style",
     styleClassic: "Classic",
     styleArcade: "Arcade",

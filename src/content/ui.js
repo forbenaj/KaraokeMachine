@@ -125,6 +125,31 @@ function mountKaraokeMenu() {
       lyricsText = lyricsTextarea.value;
       updateLyricsProcessButtons();
     });
+    const lyricsEditorBody = document.createElement("div");
+    lyricsEditorBody.id = LYRICS_EDITOR_BODY_ID;
+    lyricsEditorBody.className = "dkaraoke-lyrics-editor-body";
+    const lyricsEditHeader = document.createElement("div");
+    lyricsEditHeader.className = "dkaraoke-lyrics-edit-header";
+    const nameLabel = document.createElement("label");
+    nameLabel.className = "dkaraoke-visually-hidden";
+    nameLabel.htmlFor = LYRICS_NAME_ID;
+    nameLabel.textContent = t("lyricsFileName");
+    const nameInput = document.createElement("input");
+    nameInput.id = LYRICS_NAME_ID;
+    nameInput.type = "text";
+    nameInput.placeholder = t("lyricsFileName");
+    nameInput.disabled = true;
+    const saveButton = document.createElement("button");
+    saveButton.id = LYRICS_SAVE_ID;
+    saveButton.type = "button";
+    saveButton.textContent = t("saveLyrics");
+    saveButton.addEventListener("click", saveActiveLyricFile);
+    lyricsEditHeader.append(nameLabel, nameInput, saveButton);
+    lyricsEditorBody.append(lyricsEditHeader, lyricsTextarea);
+    const lyricsFileBar = document.createElement("div");
+    lyricsFileBar.id = LYRICS_FILE_BAR_ID;
+    lyricsFileBar.className = "dkaraoke-lyrics-file-bar";
+    lyricsFileBar.setAttribute("aria-label", "Lyrics files");
     const lyricsControls = document.createElement("div");
     lyricsControls.className = "dkaraoke-lyrics-controls";
 
@@ -157,7 +182,7 @@ function mountKaraokeMenu() {
     lyricsActions.append(searchButton, timingsButton);
 
     lyricsControls.append(lyricsToggle, styleField, lyricsActions);
-    lyricsEditor.append(lyricsHeading, lyricsTextarea, lyricsControls);
+    lyricsEditor.append(lyricsHeading, lyricsEditorBody, lyricsFileBar, lyricsControls);
 
     const actionRow = document.createElement("div");
     actionRow.className = "dkaraoke-action-row";
@@ -206,6 +231,7 @@ function mountKaraokeMenu() {
   updateStemButtons();
   updateLyricsButton();
   updateLyricsProcessButtons();
+  renderLyricFileBar();
   setLyricsStyle(lyricsStyle, false);
   updateSettingsModalControls();
   renderDebugPanel();
@@ -278,6 +304,10 @@ function refreshLocalizedUI() {
   if (editor) editor.placeholder = t("lyricsPlaceholder");
   const lyricsButton = document.getElementById(LYRICS_ID);
   if (lyricsButton) lyricsButton.textContent = t("lyrics");
+  const saveButton = document.getElementById(LYRICS_SAVE_ID);
+  if (saveButton) saveButton.textContent = t("saveLyrics");
+  const nameInput = document.getElementById(LYRICS_NAME_ID);
+  if (nameInput) nameInput.placeholder = t("lyricsFileName");
   const styleLabel = document.querySelector(`label[for="${LYRICS_STYLE_ID}"]`);
   if (styleLabel) styleLabel.textContent = t("lyricsStyle");
   const styleSelector = document.getElementById(LYRICS_STYLE_ID);
@@ -303,6 +333,7 @@ function refreshLocalizedUI() {
   updateStemButtons();
   updateLyricsButton();
   updateLyricsProcessButtons();
+  renderLyricFileBar();
   updatePlaybackMonitor();
   updateQueueUI();
   renderDebugPanel();
@@ -373,6 +404,9 @@ function remountAfterNavigation() {
   timingsJobId = null;
   autoExtractAfterSearch = false;
   lyricsText = "";
+  lyricFiles = [];
+  activeLyricsFileId = "";
+  lyricFileJobId = null;
   youtubeLyrics = { text: "", segments: [], source: "none" };
   if (settings.defaultStateMode === "reset") applyPlaybackState(defaultPlaybackState());
   setLyrics(youtubeLyrics);

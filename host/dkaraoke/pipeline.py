@@ -21,6 +21,8 @@ from .diagnostics import record_diagnostic
 from .logging_setup import LOGGER
 from .lyrics import (
     fetch_lrclib_lyrics,
+    legacy_extracted_file_id,
+    list_lyric_files,
     normalize_cached_lyrics,
     normalize_lyrics_timing_method,
     normalize_lyrics_timing_source,
@@ -86,18 +88,31 @@ def check_cache(job_id, raw_url):
             for marker in ("local-ctc", "local-silero-vad", "local-whisper")
         )
     )
+    active_lyrics_file_id = legacy_extracted_file_id(lyrics) if has_local_timing else ""
+    if not has_local_timing:
+        for file_id, file_name in (("ctc", "ctc_lyrics.json"), ("silero", "silero_lyrics.json")):
+            candidate = normalize_cached_lyrics(read_json_cache(output_dir / file_name))
+            if (candidate or {}).get("text") and (candidate or {}).get("segments"):
+                lyrics = candidate
+                has_local_timing = True
+                active_lyrics_file_id = file_id
+                break
     if not has_local_timing:
         lyrics = normalize_cached_lyrics(read_json_cache(output_dir / "lrclib_lyrics.json"))
     if not (lyrics or {}).get("text"):
         lyrics = {"text": "", "segments": [], "source": "none"}
+        active_lyrics_file_id = ""
     else:
         lyrics = {key: lyrics.get(key) for key in ("text", "segments", "source")}
+        active_lyrics_file_id = active_lyrics_file_id if has_local_timing else "lrclib"
 
     has_stems = all(is_complete_file(path) for path in (instrumental_path, vocals_path))
     if has_stems:
         unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
     payload = {
         "lyrics": lyrics,
+        "lyricFiles": list_lyric_files(output_dir),
+        "activeLyricsFileId": active_lyrics_file_id,
         "videoId": video_id,
         "hasLyrics": bool(lyrics.get("text") and lyrics.get("segments")),
         "hasStems": has_stems,
@@ -451,6 +466,8 @@ def run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timin
             "lyricsComplete",
             f"Lyrics timings extracted with {method_label} from original audio.",
             lyrics=lyrics,
+            lyricFiles=list_lyric_files(output_dir),
+            activeLyricsFileId=legacy_extracted_file_id(lyrics) or "ctc",
             videoId=video_id,
         )
     except Exception as exc:
@@ -603,6 +620,8 @@ def extract_lyrics_timings(
         "lyricsComplete",
         f"Lyrics timings extracted with {method_label} from {source_label}.",
         lyrics=lyrics,
+        lyricFiles=list_lyric_files(output_dir),
+        activeLyricsFileId=legacy_extracted_file_id(lyrics) or "ctc",
         videoId=video_id,
     )
 

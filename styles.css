@@ -810,12 +810,44 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
   color: var(--dk-error);
 }
 
+.dkaraoke-lyrics-editor-body {
+  display: block;
+  min-height: 350px;
+  padding: 12px;
+  padding-bottom: 0;
+}
+
+.dkaraoke-lyrics-edit-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+
+#dkaraoke-lyrics-name {
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border: var(--dk-border-sm);
+  border-radius: 0;
+  color: var(--dk-ink);
+  background: var(--dk-note);
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, 0.12);
+  font: 800 12px/1 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+#dkaraoke-lyrics-name:focus {
+  outline: var(--dk-focus-ring);
+  outline-offset: 2px;
+}
+
 #dkaraoke-lyrics-text {
   flex: 1;
-  width: calc(100% - 24px);
+  width: 100%;
   min-height: 350px;
   max-height: 70vh;
-  margin: 12px;
+  margin: 0;
   resize: vertical;
   padding: 13px;
   border: var(--dk-border-sm);
@@ -830,6 +862,107 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
 #dkaraoke-lyrics-text:focus {
   border-color: var(--dk-ink);
   box-shadow: inset 0 -5px 0 var(--dk-magenta);
+}
+
+.dkaraoke-lyrics-file-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  min-width: 0;
+  max-height: 150px;
+  align-items: stretch;
+  gap: 5px;
+  overflow-y: auto;
+  padding: 6px 8px 8px;
+  border: var(--dk-border-sm);
+  border-right: 0;
+  border-left: 0;
+  background: var(--dk-yellow);
+  box-shadow: inset 0 3px 0 rgba(0, 0, 0, 0.12);
+}
+
+.dkaraoke-lyrics-file-button {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 46px;
+  grid-template-rows: minmax(10px, auto) 1fr;
+  place-items: center;
+  gap: 1px;
+  padding: 1px;
+  border: 2px solid var(--dk-ink);
+  border-radius: 0;
+  color: var(--dk-ink);
+  background: var(--dk-paper);
+  box-shadow: 2px 2px 0 var(--dk-ink);
+  cursor: pointer;
+}
+
+.dkaraoke-lyrics-file-icon {
+  display: block;
+  width: 24px;
+  height: 28px;
+  background: var(--dk-ink);
+  -webkit-mask: var(--dk-file-icon) center / contain no-repeat;
+  mask: var(--dk-file-icon) center / contain no-repeat;
+}
+
+.dkaraoke-lyrics-file-button:hover,
+.dkaraoke-lyrics-file-button.is-active {
+  color: var(--dk-paper);
+  background: var(--dk-magenta);
+  transform: translate(-1px, -1px);
+}
+
+.dkaraoke-lyrics-file-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+  transform: none;
+}
+
+.dkaraoke-lyrics-file-button.is-active .dkaraoke-lyrics-file-icon,
+.dkaraoke-lyrics-file-button:hover .dkaraoke-lyrics-file-icon {
+  background: var(--dk-paper);
+}
+
+.dkaraoke-lyrics-file-label {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font: 900 7px/1 var(--dk-ui-font);
+  text-align: center;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.dkaraoke-lyrics-file-new {
+  min-height: 46px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+
+.dkaraoke-lyrics-file-new:hover,
+.dkaraoke-lyrics-file-new.is-active {
+  background: transparent;
+  transform: translate(-1px, -1px);
+}
+
+.dkaraoke-lyrics-file-new .dkaraoke-lyrics-file-label {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 2px solid var(--dk-ink);
+  color: var(--dk-ink);
+  background: var(--dk-yellow);
+  box-shadow: 2px 2px 0 var(--dk-ink);
+  font: 900 10px/1 var(--dk-ui-font);
+  text-transform: uppercase;
 }
 
 .dkaraoke-lyrics-controls {
@@ -860,7 +993,8 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
 #dkaraoke-lyrics-style,
 #dkaraoke-lyrics,
 #dkaraoke-search-lrclib,
-#dkaraoke-extract-timings {
+#dkaraoke-extract-timings,
+#dkaraoke-save-lyrics {
   min-height: 32px;
   padding: 0 10px;
   border: var(--dk-border-sm);
@@ -900,13 +1034,15 @@ html:has(:fullscreen) .dkaraoke-monitor-star {
 
 #dkaraoke-lyrics:disabled,
 #dkaraoke-search-lrclib:disabled,
-#dkaraoke-extract-timings:disabled {
+#dkaraoke-extract-timings:disabled,
+#dkaraoke-save-lyrics:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
 #dkaraoke-search-lrclib:not(:disabled):active,
-#dkaraoke-extract-timings:not(:disabled):active {
+#dkaraoke-extract-timings:not(:disabled):active,
+#dkaraoke-save-lyrics:not(:disabled):active {
   transform: translate(3px, 3px);
   box-shadow: none;
 }

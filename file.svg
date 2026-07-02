@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 300">
+  <title>File</title>
+
+  <g fill="#fff">
+    <rect x="50" y="0" width="170" height="30"/>
+    <rect x="50" y="270" width="200" height="30"/>
+    <rect x="50" y="0" width="30" height="300"/>
+    <rect x="250" y="60" width="30" height="240"/>
+    <rect x="190" y="0" width="30" height="85" transform ="rotate(-45 220 0)"/>
+
+    <rect x="170" y="30" width="30" height="74"/>
+    <rect x="170" y="100" width="90" height="30"/>
+  </g>
+</svg>

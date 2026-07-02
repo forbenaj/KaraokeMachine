@@ -483,6 +483,10 @@ function ensureNativePort() {
       instrumentalUrl: hostMessage.instrumentalUrl || "",
       vocalsUrl: hostMessage.vocalsUrl || "",
       lyrics: hostMessage.lyrics || null,
+      lyricFiles: Array.isArray(hostMessage.lyricFiles) ? hostMessage.lyricFiles : null,
+      activeLyricsFileId: hostMessage.activeLyricsFileId || "",
+      lyricFile: hostMessage.file || null,
+      droppedTimings: hostMessage.droppedTimings === true,
       videoId: hostMessage.videoId || "",
       progress: Number.isFinite(hostMessage.progress) ? hostMessage.progress : null,
       phase: hostMessage.phase || "",
@@ -491,7 +495,11 @@ function ensureNativePort() {
       hasStems: hostMessage.hasStems === true
     });
 
-    if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error", "canceled"].includes(hostMessage.type)) {
+    if ([
+      "cacheCheck", "complete", "lyrics", "lyricsComplete",
+      "lyricFiles", "lyricFileLoaded", "lyricFileSaved", "lyricFileCreated",
+      "error", "canceled"
+    ].includes(hostMessage.type)) {
       clearJobTimeout(hostMessage.jobId);
       if (job.kind === "download" && DOWNLOAD_TERMINAL_TYPES.has(hostMessage.type)) {
         upsertProcessedSong(job, {
@@ -854,6 +862,57 @@ function extractLyricsTimings(message, tabId, sendResponse) {
   });
 }
 
+function lyricsFileAction(message, tabId, sendResponse) {
+  let port;
+  try {
+    port = ensureNativePort();
+  } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_connect_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "lyricsFile",
+    });
+    sendResponse({ ok: false, error: String(error) });
+    return;
+  }
+  const actionByType = {
+    "dkaraoke-list-lyric-files": "listLyricFiles",
+    "dkaraoke-load-lyric-file": "loadLyricFile",
+    "dkaraoke-save-lyric-file": "saveLyricFile",
+    "dkaraoke-create-lyric-file": "createLyricFile",
+  };
+  const action = actionByType[message.type];
+  jobs.set(message.jobId, { tabId, kind: "lyricsFile", videoId: videoIdFromUrl(message.url) });
+  armJobTimeout(message.jobId, "cache");
+  try {
+    port.postMessage({
+      action,
+      jobId: message.jobId,
+      url: message.url,
+      fileId: message.fileId || "",
+      lyricsText: message.lyricsText || "",
+      label: message.label || "",
+    });
+    sendResponse({ ok: true });
+  } catch (error) {
+    recordDiagnostic({
+      level: "error",
+      event: "native_post_lyrics_file_failed",
+      message: String(error),
+      jobId: message.jobId,
+      videoId: videoIdFromUrl(message.url),
+      phase: "lyricsFile",
+      details: { action },
+    });
+    jobs.delete(message.jobId);
+    clearJobTimeout(message.jobId);
+    sendResponse({ ok: false, error: String(error) });
+  }
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") return undefined;
   if (message.type === "dkaraoke-record-diagnostic") {
@@ -897,6 +956,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     searchLrclib(message, sender.tab?.id, sendResponse);
   } else if (message?.type === "dkaraoke-extract-lyrics-timings") {
     extractLyricsTimings(message, sender.tab?.id, sendResponse);
+  } else if (
+    message?.type === "dkaraoke-list-lyric-files"
+    || message?.type === "dkaraoke-load-lyric-file"
+    || message?.type === "dkaraoke-save-lyric-file"
+    || message?.type === "dkaraoke-create-lyric-file"
+  ) {
+    lyricsFileAction(message, sender.tab?.id, sendResponse);
   } else if (message?.type === "dkaraoke-get-queue") {
     sendResponse({ ok: true, queue: queueSnapshot(), processedSongs: processedSongsSnapshot() });
     return undefined;

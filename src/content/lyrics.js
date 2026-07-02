@@ -293,15 +293,96 @@ function updateLyricsButton() {
 function updateLyricsProcessButtons() {
   const searchButton = document.getElementById(LRCLIB_SEARCH_ID);
   const timingsButton = document.getElementById(EXTRACT_TIMINGS_ID);
+  const saveButton = document.getElementById(LYRICS_SAVE_ID);
+  const nameInput = document.getElementById(LYRICS_NAME_ID);
+  const newButton = document.getElementById(LYRICS_NEW_FILE_ID);
   const hasText = Boolean(document.getElementById(LYRICS_TEXT_ID)?.value.trim() || lyricsText.trim());
   if (searchButton) {
-    searchButton.disabled = Boolean(lyricsSearchJobId) || timingsProcessing;
+    searchButton.disabled = Boolean(lyricsSearchJobId) || timingsProcessing || Boolean(lyricFileJobId);
     searchButton.textContent = lyricsSearchJobId ? t("searchingLrclib") : t("searchLrclib");
   }
   if (timingsButton) {
-    timingsButton.disabled = timingsProcessing || Boolean(lyricsSearchJobId) || !hasText;
+    timingsButton.disabled = timingsProcessing || Boolean(lyricsSearchJobId) || Boolean(lyricFileJobId) || !hasText;
     timingsButton.textContent = timingsProcessing ? t("extractingTimings") : t("extractTimings");
   }
+  if (saveButton) {
+    saveButton.disabled = Boolean(lyricFileJobId) || !activeLyricsFileId;
+    saveButton.textContent = lyricFileJobId ? t("savingLyrics") : t("saveLyrics");
+  }
+  if (nameInput) {
+    nameInput.disabled = Boolean(lyricFileJobId) || !activeLyricsFileId;
+  }
+  if (newButton) {
+    newButton.disabled = Boolean(lyricFileJobId);
+    newButton.title = lyricFileJobId ? t("creatingLyricsFile") : "New";
+  }
+}
+
+function activeLyricFile() {
+  return lyricFiles.find((file) => file.id === activeLyricsFileId) || null;
+}
+
+function lyricFileLabel(file) {
+  if (file?.label) return file.label;
+  return file?.label || t("newLyricsFile");
+}
+
+function updateLyricsNameField() {
+  const input = document.getElementById(LYRICS_NAME_ID);
+  if (!input) return;
+  const file = activeLyricFile();
+  input.value = file ? lyricFileLabel(file) : "";
+  input.disabled = Boolean(lyricFileJobId) || !file;
+}
+
+function updateLyricFiles(files, activeFileId = activeLyricsFileId) {
+  lyricFiles = Array.isArray(files) ? files : [];
+  const requestedFileId = activeFileId || "";
+  if (requestedFileId && lyricFiles.some((file) => file.id === requestedFileId)) {
+    activeLyricsFileId = requestedFileId;
+  } else if (!activeLyricsFileId || !lyricFiles.some((file) => file.id === activeLyricsFileId)) {
+    activeLyricsFileId = lyricFiles[0]?.id || "";
+  }
+  updateLyricsNameField();
+  renderLyricFileBar();
+  updateLyricsProcessButtons();
+}
+
+function renderLyricFileBar() {
+  const bar = document.getElementById(LYRICS_FILE_BAR_ID);
+  if (!bar) return;
+  const fileIconUrl = chrome.runtime.getURL("file.svg");
+  const buttons = lyricFiles.map((file) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "dkaraoke-lyrics-file-button";
+    button.dataset.fileId = file.id || "";
+    button.classList.toggle("is-active", file.id === activeLyricsFileId);
+    button.title = lyricFileLabel(file);
+    button.setAttribute("aria-label", lyricFileLabel(file));
+    button.style.setProperty("--dk-file-icon", `url("${fileIconUrl}")`);
+    button.addEventListener("click", () => loadLyricFile(file.id));
+    const label = document.createElement("span");
+    label.className = "dkaraoke-lyrics-file-label";
+    label.textContent = lyricFileLabel(file);
+    const icon = document.createElement("span");
+    icon.className = "dkaraoke-lyrics-file-icon";
+    button.append(label, icon);
+    return button;
+  });
+  const newButton = document.createElement("button");
+  newButton.id = LYRICS_NEW_FILE_ID;
+  newButton.type = "button";
+  newButton.className = "dkaraoke-lyrics-file-button dkaraoke-lyrics-file-new";
+  newButton.title = "New";
+  newButton.setAttribute("aria-label", "New");
+  newButton.addEventListener("click", createLyricFile);
+  const newLabel = document.createElement("span");
+  newLabel.className = "dkaraoke-lyrics-file-label";
+  newLabel.textContent = "New";
+  newButton.append(newLabel);
+  bar.replaceChildren(...buttons, newButton);
+  updateLyricsProcessButtons();
 }
 function startLyricsRendering() {
   if (lyricAnimationId === null) lyricAnimationId = requestAnimationFrame(renderLyricsFrame);
@@ -330,6 +411,59 @@ function setLyrics(data, updateEditor = true) {
   updateLyricsButton();
   if (enabled && lyricsEnabled && lyricsReady) startLyricsRendering();
   else stopLyricsRendering();
+}
+
+function requestLyricFileAction(type, extra = {}, busyMessage = "") {
+  const videoId = currentVideoId();
+  if (!videoId || lyricFileJobId) return;
+  const jobId = crypto.randomUUID();
+  lyricFileJobId = jobId;
+  updateLyricsProcessButtons();
+  if (busyMessage) setLyricsStatus(busyMessage, "busy");
+  chrome.runtime.sendMessage({
+    type,
+    jobId,
+    url: location.href,
+    ...extra,
+  }, (response) => {
+    const error = chrome.runtime.lastError?.message || response?.error;
+    if (lyricFileJobId !== jobId) return;
+    if (!response?.ok || error) {
+      lyricFileJobId = null;
+      updateLyricsProcessButtons();
+      setLyricsStatus(error || t("lyricsFileActionFailed"), "error");
+    }
+  });
+}
+
+function refreshLyricFiles() {
+  requestLyricFileAction("dkaraoke-list-lyric-files", {}, t("lyricsFilesLoaded"));
+}
+
+function loadLyricFile(fileId) {
+  if (!fileId || fileId === activeLyricsFileId || lyricFileJobId) return;
+  requestLyricFileAction("dkaraoke-load-lyric-file", { fileId }, t("lyricsFileLoaded"));
+}
+
+function saveActiveLyricFile() {
+  if (!activeLyricsFileId || lyricFileJobId) return;
+  const text = document.getElementById(LYRICS_TEXT_ID)?.value || "";
+  const label = document.getElementById(LYRICS_NAME_ID)?.value || lyricFileLabel(activeLyricFile());
+  requestLyricFileAction(
+    "dkaraoke-save-lyric-file",
+    { fileId: activeLyricsFileId, lyricsText: text, label },
+    t("savingLyrics"),
+  );
+}
+
+function createLyricFile() {
+  if (lyricFileJobId) return;
+  const text = document.getElementById(LYRICS_TEXT_ID)?.value || lyricsText || "";
+  requestLyricFileAction(
+    "dkaraoke-create-lyric-file",
+    { lyricsText: text, label: "New" },
+    t("creatingLyricsFile"),
+  );
 }
 
 function toggleLyrics() {
