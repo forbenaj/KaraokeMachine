@@ -1,28 +1,67 @@
-function setProcessProgress(value = null) {
-  const progress = document.getElementById(PROGRESS_ID);
-  const fill = document.getElementById(PROGRESS_FILL_ID);
-  if (!progress || !fill) return;
+function showFailureNotification(message) {
+  const localized = localizeMessage(message);
+  if (!localized) return;
 
-  const determinate = Number.isFinite(value);
-  const percent = determinate ? Math.max(0, Math.min(100, value)) : 0;
-  progress.hidden = !processing;
-  progress.classList.toggle("is-indeterminate", processing && !determinate);
-  fill.style.width = determinate ? `${percent}%` : "36%";
-  if (determinate) {
-    progress.setAttribute("aria-valuenow", String(Math.round(percent)));
-  } else {
-    progress.removeAttribute("aria-valuenow");
+  let notification = document.getElementById(FAILURE_NOTIFICATION_ID);
+  if (!notification) {
+    notification = document.createElement("section");
+    notification.id = FAILURE_NOTIFICATION_ID;
+    notification.setAttribute("role", "alert");
+
+    const header = document.createElement("div");
+    header.className = "dkaraoke-failure-header";
+    const title = document.createElement("strong");
+    title.textContent = "Failure";
+    const actions = document.createElement("div");
+    actions.className = "dkaraoke-failure-actions";
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.textContent = "Copy";
+    copy.addEventListener("click", () => {
+      const text = notification.querySelector(".dkaraoke-failure-text")?.value || "";
+      const copied = navigator.clipboard?.writeText(text);
+      if (copied) {
+        copied.catch(() => {
+          const field = notification.querySelector(".dkaraoke-failure-text");
+          field?.select();
+          document.execCommand("copy");
+        });
+        return;
+      }
+      try {
+        const field = notification.querySelector(".dkaraoke-failure-text");
+        field?.select();
+        document.execCommand("copy");
+      } catch (_error) {
+        // The textarea remains selectable if the browser blocks clipboard access.
+      }
+    });
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "x";
+    close.setAttribute("aria-label", "Close");
+    close.addEventListener("click", () => notification.remove());
+    actions.append(copy, close);
+    header.append(title, actions);
+
+    const text = document.createElement("textarea");
+    text.className = "dkaraoke-failure-text";
+    text.readOnly = true;
+    text.rows = 3;
+
+    notification.append(header, text);
+    document.body.appendChild(notification);
   }
+
+  const text = notification.querySelector(".dkaraoke-failure-text");
+  if (text) text.value = localized;
+  notification.hidden = false;
 }
 
 function setProcessStatus(message, state = "idle", progress = null) {
-  const status = document.getElementById(STATUS_ID);
-  if (!status) return;
   const localized = localizeMessage(message);
-  status.textContent = localized;
-  status.dataset.state = state;
+  if (state === "error") showFailureNotification(localized);
   if (!isProgressDebugMessage(localized)) appendDebugLog("karaokize", state, localized, { progress });
-  setProcessProgress(progress);
 }
 
 function setProcessing(nextProcessing) {
@@ -30,7 +69,6 @@ function setProcessing(nextProcessing) {
   setDebugJobProcess(activeJobId || "karaokize", "karaokize", processing, {
     message: processing ? t("karaokizeActive") : t("karaokizeIdle"),
   });
-  setProcessProgress();
   updateLyricsProcessButtons();
   updatePlaybackMonitor();
 }

@@ -100,12 +100,7 @@ function mountKaraokeMenu() {
     const lyricsLabel = document.createElement("label");
     lyricsLabel.htmlFor = LYRICS_TEXT_ID;
     lyricsLabel.textContent = t("lyricsUpper");
-    const lyricsStatus = document.createElement("p");
-    lyricsStatus.id = LYRICS_STATUS_ID;
-    lyricsStatus.dataset.state = "idle";
-    lyricsStatus.setAttribute("aria-live", "polite");
-    lyricsStatus.textContent = t("lyricsInitialStatus");
-    lyricsHeading.append(lyricsLabel, lyricsStatus);
+    lyricsHeading.append(lyricsLabel);
 
     const searchButton = document.createElement("button");
     searchButton.id = LRCLIB_SEARCH_ID;
@@ -119,12 +114,23 @@ function mountKaraokeMenu() {
     timingsButton.addEventListener("click", extractLyricsTimings);
     const lyricsTextarea = document.createElement("textarea");
     lyricsTextarea.id = LYRICS_TEXT_ID;
-    lyricsTextarea.placeholder = t("lyricsPlaceholder");
+    lyricsTextarea.dataset.processState = "idle";
+    lyricsTextarea.dataset.processText = "Waiting...";
     lyricsTextarea.value = lyricsText;
     lyricsTextarea.addEventListener("input", () => {
       lyricsText = lyricsTextarea.value;
+      updateLyricsWatermark();
       updateLyricsProcessButtons();
     });
+    const lyricsTextWrap = document.createElement("div");
+    lyricsTextWrap.className = "dkaraoke-lyrics-text-wrap";
+    const lyricsWatermark = document.createElement("div");
+    lyricsWatermark.id = LYRICS_WATERMARK_ID;
+    lyricsWatermark.className = "dkaraoke-lyrics-watermark";
+    lyricsWatermark.dataset.state = "idle";
+    lyricsWatermark.textContent = "Waiting...";
+    lyricsWatermark.setAttribute("aria-hidden", "true");
+    lyricsTextWrap.append(lyricsTextarea, lyricsWatermark);
     const lyricsEditorBody = document.createElement("div");
     lyricsEditorBody.id = LYRICS_EDITOR_BODY_ID;
     lyricsEditorBody.className = "dkaraoke-lyrics-editor-body";
@@ -145,7 +151,7 @@ function mountKaraokeMenu() {
     saveButton.textContent = t("saveLyrics");
     saveButton.addEventListener("click", saveActiveLyricFile);
     lyricsEditHeader.append(nameLabel, nameInput, saveButton);
-    lyricsEditorBody.append(lyricsEditHeader, lyricsTextarea);
+    lyricsEditorBody.append(lyricsEditHeader, lyricsTextWrap);
     const lyricsFileBar = document.createElement("div");
     lyricsFileBar.id = LYRICS_FILE_BAR_ID;
     lyricsFileBar.className = "dkaraoke-lyrics-file-bar";
@@ -187,35 +193,13 @@ function mountKaraokeMenu() {
     const actionRow = document.createElement("div");
     actionRow.className = "dkaraoke-action-row";
 
-    const status = document.createElement("p");
-    status.id = STATUS_ID;
-    status.dataset.state = "idle";
-    status.setAttribute("aria-live", "polite");
-    status.textContent = t("readyToPrepare");
-
-    const statusStack = document.createElement("div");
-    statusStack.className = "dkaraoke-status-stack";
-
-    const progress = document.createElement("div");
-    progress.id = PROGRESS_ID;
-    progress.hidden = true;
-    progress.setAttribute("role", "progressbar");
-    progress.setAttribute("aria-label", t("karaokizeProgress"));
-    progress.setAttribute("aria-valuemin", "0");
-    progress.setAttribute("aria-valuemax", "100");
-
-    const progressFill = document.createElement("span");
-    progressFill.id = PROGRESS_FILL_ID;
-    progress.appendChild(progressFill);
-    statusStack.append(status, progress);
-
     const settingsButton = document.createElement("button");
     settingsButton.id = SETTINGS_BUTTON_ID;
     settingsButton.type = "button";
     settingsButton.textContent = t("settings");
     settingsButton.addEventListener("click", openSettingsModal);
 
-    actionRow.append(statusStack, settingsButton);
+    actionRow.append(settingsButton);
     menu.append(header, instruments, actionRow);
     leftPanel.appendChild(menu);
     rightPanel.appendChild(lyricsEditor);
@@ -302,7 +286,7 @@ function refreshLocalizedUI() {
   const lyricsLabel = document.querySelector(`label[for="${LYRICS_TEXT_ID}"]`);
   if (lyricsLabel) lyricsLabel.textContent = t("lyricsUpper");
   const editor = document.getElementById(LYRICS_TEXT_ID);
-  if (editor) editor.placeholder = t("lyricsPlaceholder");
+  if (editor && !editor.dataset.processText) editor.dataset.processText = "Waiting...";
   const lyricsButton = document.getElementById(LYRICS_ID);
   if (lyricsButton) lyricsButton.textContent = t("lyrics");
   const saveButton = document.getElementById(LYRICS_SAVE_ID);
@@ -324,8 +308,6 @@ function refreshLocalizedUI() {
     styleSelector.value = selected;
   }
 
-  const progress = document.getElementById(PROGRESS_ID);
-  if (progress) progress.setAttribute("aria-label", t("karaokizeProgress"));
   const settingsButton = document.getElementById(SETTINGS_BUTTON_ID);
   if (settingsButton) settingsButton.textContent = t("settings");
   const toggle = document.getElementById(BUTTON_ID);

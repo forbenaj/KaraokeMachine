@@ -19,12 +19,45 @@ function ensureLyricsOverlay() {
   return overlay;
 }
 
-function setLyricsStatus(message, state = "idle") {
-  const status = document.getElementById(LYRICS_STATUS_ID);
-  if (!status) return;
+function compactLyricsProcessText(message, state = "idle") {
+  const text = String(localizeMessage(message) || "").toLowerCase();
+  if (state === "error" || /\b(error|failed|cannot|could not|timed out|missing)\b/.test(text)) return "Error";
+  if (/\b(sav\w*|writ\w*)\b/.test(text) && state !== "busy") return "Saved";
+  if (state !== "busy") return "Waiting...";
+  if (/\b(search|lrclib)\b/.test(text)) return "Searching...";
+  if (/\b(extract|align|timing|detect|refin|vocal)\b/.test(text)) return "Extracting...";
+  if (/\b(sav\w*|writ\w*)\b/.test(text)) return "Saving...";
+  if (/\b(creat\w*|new)\b/.test(text)) return "Creating...";
+  if (/\b(load\w*|read\w*|file|cache|synchroniz\w*)\b/.test(text)) return "Loading...";
+  return "Processing...";
+}
+
+function updateLyricsWatermark() {
+  const editor = document.getElementById(LYRICS_TEXT_ID);
+  const watermark = document.getElementById(LYRICS_WATERMARK_ID);
+  if (!editor || !watermark) return;
+  const state = editor.dataset.processState || "idle";
+  watermark.textContent = editor.dataset.processText || "Waiting...";
+  watermark.dataset.state = state;
+  watermark.hidden = Boolean(editor.value.trim()) && !["busy", "error"].includes(state);
+}
+
+function updateLyricsMonitor(message, state = "idle") {
   const localized = localizeMessage(message);
-  status.textContent = localized;
-  status.dataset.state = state;
+  const processText = compactLyricsProcessText(localized, state);
+  const editor = document.getElementById(LYRICS_TEXT_ID);
+  if (editor) {
+    editor.dataset.processState = state;
+    editor.dataset.processText = processText;
+    editor.title = localized;
+  }
+  updateLyricsWatermark();
+}
+
+function setLyricsStatus(message, state = "idle") {
+  const localized = localizeMessage(message);
+  updateLyricsMonitor(localized, state);
+  if (state === "error") showFailureNotification(localized);
   if (!isProgressDebugMessage(localized)) {
     appendDebugLog(lyricsSearchJobId ? "lyricsSearch" : "lyricsTiming", state, localized);
   }
@@ -404,7 +437,10 @@ function setLyrics(data, updateEditor = true) {
   if (updateEditor && typeof data?.text === "string") {
     lyricsText = data.text;
     const editor = document.getElementById(LYRICS_TEXT_ID);
-    if (editor) editor.value = lyricsText;
+    if (editor) {
+      editor.value = lyricsText;
+      updateLyricsWatermark();
+    }
   }
   renderedLyricSegment = null;
   renderedClassicSegmentIndex = -1;
