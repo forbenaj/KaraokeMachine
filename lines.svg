@@ -1,7 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 2000 2000">
-  <title>2 line mask</title>
+  <title>Perspective line mask</title>
+
   <g fill="#fff">
-    <rect x="0" y="950" width="2000" height="20"/>
-    <rect x="0" y="1020" width="2000" height="20"/>
+    <!-- Horizon -->
+    <rect x="0" y="997" width="2000" height="3"/>
+    <rect x="0" y="1000" width="2000" height="3"/>
+
+    <!-- Pair 2 -->
+    <rect x="0" y="986" width="2000" height="5"/>
+    <rect x="0" y="1009" width="2000" height="5"/>
+
+    <!-- Pair 3 -->
+    <rect x="0" y="969" width="2000" height="7"/>
+    <rect x="0" y="1024" width="2000" height="7"/>
+
+    <!-- Pair 4 -->
+    <rect x="0" y="942" width="2000" height="10"/>
+    <rect x="0" y="1048" width="2000" height="10"/>
+
+    <!-- Pair 5 -->
+    <rect x="0" y="900" width="2000" height="15"/>
+    <rect x="0" y="1085" width="2000" height="15"/>
+
+    <!-- Pair 6 -->
+    <rect x="0" y="835" width="2000" height="22"/>
+    <rect x="0" y="1143" width="2000" height="22"/>
+
+    <!-- Pair 7 -->
+    <rect x="0" y="735" width="2000" height="34"/>
+    <rect x="0" y="1231" width="2000" height="34"/>
+
+    <!-- Pair 8 -->
+    <rect x="0" y="575" width="2000" height="52"/>
+    <rect x="0" y="1373" width="2000" height="52"/>
+
+    <!-- Pair 9 -->
+    <rect x="0" y="320" width="2000" height="82"/>
+    <rect x="0" y="1598" width="2000" height="82"/>
+
+    <!-- Pair 10 -->
+    <rect x="0" y="0" width="2000" height="140"/>
+    <rect x="0" y="1860" width="2000" height="140"/>
   </g>
 </svg>
