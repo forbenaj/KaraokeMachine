@@ -7,6 +7,35 @@ function summarizeQueueItem(item) {
   return localizeMessage(item.message || t("processing"));
 }
 
+function isQueueButtonSuppressed() {
+  return !enabled
+    || Boolean(document.fullscreenElement)
+    || Boolean(document.querySelector(".html5-video-player.ytp-fullscreen"));
+}
+
+function syncQueueButtonVisibility(button) {
+  if (!button) return;
+  button.hidden = isQueueButtonSuppressed();
+}
+
+function ensureQueueVisibilityObserver() {
+  if (queueVisibilityObserver) return;
+  queueVisibilityObserver = new MutationObserver(() => {
+    syncQueueButtonVisibility(document.getElementById(QUEUE_BUTTON_ID));
+  });
+  queueVisibilityObserver.observe(document.documentElement, {
+    attributes: true,
+    subtree: true,
+    attributeFilter: ["class"],
+  });
+  document.addEventListener("fullscreenchange", () => {
+    syncQueueButtonVisibility(document.getElementById(QUEUE_BUTTON_ID));
+  });
+  document.addEventListener("webkitfullscreenchange", () => {
+    syncQueueButtonVisibility(document.getElementById(QUEUE_BUTTON_ID));
+  });
+}
+
 function isQueueItemTerminal(item) {
   return ["complete", "error", "canceled"].includes(item?.status);
 }
@@ -198,6 +227,7 @@ function renderProcessedSongsDialog() {
 }
 
 function ensureQueueUI() {
+  ensureQueueVisibilityObserver();
   let button = document.getElementById(QUEUE_BUTTON_ID);
   let panel = document.getElementById(QUEUE_PANEL_ID);
   if (!button) {
@@ -221,7 +251,7 @@ function ensureQueueUI() {
 }
 
 function updateQueueButton(button, activeItems) {
-  button.hidden = false;
+  syncQueueButtonVisibility(button);
   button.replaceChildren();
   button.classList.toggle("is-idle", activeItems.length === 0);
   if (!activeItems.length) {
@@ -249,7 +279,8 @@ function updateQueueUI(nextItems = queueItems, nextProcessedSongs = processedSon
   recordQueueDebug(activeItems);
   const { button, panel } = ensureQueueUI();
   updateQueueButton(button, activeItems);
-  panel.hidden = !queuePanelOpen;
+  const hideQueuePanel = isQueueButtonSuppressed() || !queuePanelOpen;
+  panel.hidden = hideQueuePanel;
   if (!panel.hidden) renderQueuePanel(panel);
   if (processedSongsDialogOpen) renderProcessedSongsDialog();
   applyQueueForCurrentVideo();

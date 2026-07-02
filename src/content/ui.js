@@ -272,6 +272,7 @@ function applyState() {
   if (enabled && lyricsEnabled && lyricsReady) startLyricsRendering();
   updateWorkspaceLayout();
   renderDebugPanel();
+  updateQueueUI();
   requestAnimationFrame(() => {
     updatePlaybackMonitor();
     window.dispatchEvent(new Event("resize"));

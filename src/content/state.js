@@ -120,6 +120,7 @@ let processedSongItems = [];
 let queuePanelOpen = false;
 let processedSongsDialogOpen = false;
 let processedSongsSearch = "";
+let queueVisibilityObserver = null;
 let lyricsReady = false;
 let lyricsText = "";
 let lyricSegments = [];
