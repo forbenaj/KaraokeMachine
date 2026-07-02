@@ -859,19 +859,21 @@ class PipelineOrderingTests(unittest.TestCase):
                     "timingSource": "original",
                 }
 
+            messages = []
+
             with (
                 patch.object(host, "app_download_dir", return_value=output_dir),
                 patch.object(host.pipeline, "download_source_audio", return_value=source),
                 patch.object(host.pipeline, "normalize_timing_audio", side_effect=normalize),
                 patch.object(host, "fetch_lrclib_lyrics", return_value={
                     "text": "Hello world",
-                    "segments": [],
+                    "segments": [{"text": "Hello world", "start_time": 1.0, "end_time": 2.0, "words": [{"text": "Hello"}]}],
                     "source": "lrclib",
                 }) as fetch_lrclib,
                 patch.object(host, "run_roformer", side_effect=run_roformer),
                 patch.object(host, "prepare_lyrics", side_effect=prepare),
                 patch.object(host, "publish_stems_and_complete"),
-                patch.object(host, "send_job"),
+                patch.object(host, "send_job", side_effect=lambda *args, **kwargs: messages.append((args, kwargs))),
             ):
                 host.run_download(
                     "stem-job",
@@ -893,6 +895,12 @@ class PipelineOrderingTests(unittest.TestCase):
                 {"title": "Artist - Song", "artist": "Artist", "duration": 123},
                 output_dir,
             )
+            message_types = [args[1] for args, _kwargs in messages]
+            self.assertLess(message_types.index("lyricsPreview"), message_types.index("lyricsComplete"))
+            preview = next(kwargs for args, kwargs in messages if args[1] == "lyricsPreview")
+            self.assertEqual(preview["lyrics"]["text"], "Hello world")
+            self.assertEqual(preview["lyrics"]["segments"][0]["words"], [])
+            self.assertEqual(preview["activeLyricsFileId"], "lrclib")
 
 
 class PipelineConcurrencyTests(unittest.TestCase):

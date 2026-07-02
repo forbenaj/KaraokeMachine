@@ -451,6 +451,16 @@ def run_original_audio_timing_job(video_id, output_dir, timing_audio_path, timin
                 "artist": timing_request.get("artist") or "",
                 "duration": timing_request["duration"],
             }, output_dir)
+        if not requested_text.strip() and provider_lyrics.get("text"):
+            send_job(
+                timing_job_id,
+                "lyricsPreview",
+                "Lyrics available; refining timing after separation...",
+                lyrics=normalize_cached_lyrics(provider_lyrics),
+                lyricFiles=list_lyric_files(output_dir),
+                activeLyricsFileId="lrclib",
+                videoId=video_id,
+            )
         final_text = requested_text.strip() or str((provider_lyrics or {}).get("text") or "").strip()
         if not final_text:
             raise ValueError((provider_lyrics or {}).get("message") or "No lyrics were available for timing extraction.")

@@ -87,7 +87,18 @@ chrome.runtime.onMessage.addListener((message) => {
     return;
   }
   if (timingsJobId && message.jobId === timingsJobId) {
-    if (message.status === "lyricsComplete") {
+    if (message.status === "lyricsPreview") {
+      if (message.lyrics?.text) {
+        lyricsText = message.lyrics.text;
+        updateLyricFiles(message.lyricFiles || lyricFiles, message.activeLyricsFileId || activeLyricsFileId);
+        setLyrics(message.lyrics);
+      }
+      updateLyricsProcessButtons();
+      setLyricsStatus(
+        message.message || t("lyricsAvailableRefining"),
+        message.lyrics?.segments?.length ? "success" : "busy"
+      );
+    } else if (message.status === "lyricsComplete") {
       timingsProcessing = false;
       timingsJobId = null;
       updateLyricFiles(

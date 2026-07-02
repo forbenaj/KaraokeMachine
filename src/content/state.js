@@ -695,6 +695,7 @@ const STATUS_TRANSLATIONS = {
   "Compressing separated stems to MP3...": "monitorExtracting",
   "Download failed.": "downloadFailed",
   "LRCLIB search complete.": "lrclibLyricsLoaded",
+  "Lyrics available; refining timing after separation...": "lyricsAvailableRefining",
   "Canceled.": "canceled",
 };
 
