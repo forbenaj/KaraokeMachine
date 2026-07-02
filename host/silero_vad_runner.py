@@ -1,7 +1,10 @@
 import json
+import os
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 
 def main():

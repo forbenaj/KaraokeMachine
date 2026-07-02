@@ -32,6 +32,7 @@ from .messaging import send_job
 from .paths import app_download_dir, stem_job_active, stem_ready_event, timing_job_lock, validate_youtube_url, video_id_from_url
 from .processes import (
     JobCanceled,
+    exclusive_ml_process,
     format_remaining_time,
     raise_if_job_canceled,
     register_job_process,
@@ -159,8 +160,11 @@ def run_roformer(job_id, source_path, output_dir):
     for path in (instrumental_path, vocals_path):
         unlink_best_effort(path, "stale RoFormer output cleanup")
     process = None
+    ml_slot = None
     roformer_completed = False
     try:
+        ml_slot = exclusive_ml_process("RoFormer", job_id)
+        ml_slot.__enter__()
         process = subprocess.Popen(
             command,
             stdin=subprocess.DEVNULL,
@@ -238,6 +242,8 @@ def run_roformer(job_id, source_path, output_dir):
         raise
     finally:
         unregister_job_process(job_id, process)
+        if ml_slot is not None:
+            ml_slot.__exit__(None, None, None)
 
 
 def download_source_audio(job_id, url, video_id, cookies, output_template, phase="download"):
@@ -567,9 +573,11 @@ def extract_lyrics_timings(
     provider_lyrics = read_json_cache(output_dir / "lrclib_lyrics.json")
     if not isinstance(provider_lyrics, dict):
         provider_lyrics = {"text": "", "segments": [], "source": "manual"}
+    actual_timing_source = timing_source
     with timing_job_lock(video_id):
         if timing_source == "original":
             with tempfile.TemporaryDirectory(prefix=f"dkaraoke-lyrics-source-{video_id}-") as source_temp:
+                source_path = None
                 if is_complete_file(legacy_audio_path):
                     send_job(
                         job_id,
@@ -578,21 +586,35 @@ def extract_lyrics_timings(
                         phase="lyrics",
                     )
                     source_path = legacy_audio_path
-                else:
-                    source_path = download_source_audio(
-                        job_id, url, video_id, cookies or [],
-                        Path(source_temp) / "audio.%(ext)s",
-                        phase="lyrics",
+                    timing_audio_path = normalize_timing_audio(
+                        job_id, source_path, Path(source_temp) / "timing-audio.wav",
                     )
-                timing_audio_path = normalize_timing_audio(
-                    job_id, source_path, Path(source_temp) / "timing-audio.wav",
-                )
+                else:
+                    _, cached_vocals_path = resolve_cached_stems(job_id, stem_dir)
+                    if is_complete_file(cached_vocals_path):
+                        send_job(
+                            job_id,
+                            "status",
+                            "Using cached vocal stem for lyric timing...",
+                            phase="lyrics",
+                        )
+                        actual_timing_source = "vocal-stem"
+                        timing_audio_path = cached_vocals_path
+                    else:
+                        source_path = download_source_audio(
+                            job_id, url, video_id, cookies or [],
+                            Path(source_temp) / "audio.%(ext)s",
+                            phase="lyrics",
+                        )
+                        timing_audio_path = normalize_timing_audio(
+                            job_id, source_path, Path(source_temp) / "timing-audio.wav",
+                        )
                 lyrics = prepare_lyrics(
                     job_id, output_dir, timing_audio_path, requested_text,
                     provider_lyrics, force=True, timing_method=timing_method,
-                    timing_source=timing_source,
+                    timing_source=actual_timing_source,
                 )
-                if source_path != legacy_audio_path:
+                if source_path and source_path != legacy_audio_path:
                     unlink_best_effort(source_path, "processed lyrics source audio cleanup")
         else:
             _, vocals_path = resolve_cached_stems(job_id, stem_dir)
@@ -624,7 +646,7 @@ def extract_lyrics_timings(
                 timing_source=timing_source,
             )
     method_label = "Silero VAD" if timing_method == "silero-vad" else "CTC forced alignment"
-    source_label = "original audio" if timing_source == "original" else "vocal stem"
+    source_label = "original audio" if actual_timing_source == "original" else "vocal stem"
     send_job(
         job_id,
         "lyricsComplete",

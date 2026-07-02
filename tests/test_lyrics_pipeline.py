@@ -62,6 +62,11 @@ class LyricsMetadataTests(unittest.TestCase):
 
 
 class YoutubeHelperTests(unittest.TestCase):
+    def test_http_403_download_error_can_retry_with_cookies(self):
+        self.assertTrue(host.has_auth_error(
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden"
+        ))
+
     def test_cookie_file_writer_has_uuid_dependency(self):
         path = host.write_cookie_file([{
             "domain": ".youtube.com",
@@ -1013,6 +1018,9 @@ class PipelineConcurrencyTests(unittest.TestCase):
     def test_original_audio_timing_does_not_wait_for_stems(self):
         with tempfile.TemporaryDirectory() as temporary:
             output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            stems = host.stem_paths(stem_dir)
             source = output_dir / "source.webm"
             timing_audio = output_dir / "timing-audio.wav"
             source.write_bytes(b"source")
@@ -1022,7 +1030,7 @@ class PipelineConcurrencyTests(unittest.TestCase):
                 patch.object(host, "app_download_dir", return_value=output_dir),
                 patch.object(host.pipeline, "download_source_audio", return_value=source) as download_source,
                 patch.object(host.pipeline, "normalize_timing_audio", return_value=timing_audio) as normalize_audio,
-                patch.object(host, "resolve_cached_stems") as resolve_cached_stems,
+                patch.object(host, "resolve_cached_stems", return_value=stems) as resolve_cached_stems,
                 patch.object(host, "prepare_lyrics", return_value={
                     "text": "Hello world",
                     "segments": [{"words": []}],
@@ -1038,11 +1046,48 @@ class PipelineConcurrencyTests(unittest.TestCase):
                     "Hello world",
                 )
 
-            resolve_cached_stems.assert_not_called()
+            resolve_cached_stems.assert_called_once()
             normalize_audio.assert_called_once()
             self.assertEqual(prepare_lyrics.call_args.args[2], timing_audio)
             self.assertEqual(prepare_lyrics.call_args.kwargs["timing_source"], "original")
             self.assertEqual(download_source.call_args.kwargs["phase"], "lyrics")
+
+    def test_original_audio_timing_reuses_cached_vocal_stem(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            stem_dir = output_dir / "separated" / "mel_band_roformer" / "audio"
+            stem_dir.mkdir(parents=True)
+            stems = host.stem_paths(stem_dir)
+            for path in stems:
+                path.write_bytes(b"stem")
+
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host, "resolve_cached_stems", return_value=stems),
+                patch.object(host.pipeline, "download_source_audio") as download_source,
+                patch.object(host.pipeline, "normalize_timing_audio") as normalize_audio,
+                patch.object(host, "prepare_lyrics", return_value={
+                    "text": "Hello world",
+                    "segments": [{"words": []}],
+                    "source": "local-ctc",
+                    "timingMethod": "ctc",
+                    "timingSource": "vocal-stem",
+                }) as prepare_lyrics,
+                patch.object(host, "send_job") as send_job,
+            ):
+                host.extract_lyrics_timings(
+                    "timing-job",
+                    "https://www.youtube.com/watch?v=abcdefghijk",
+                    "Hello world",
+                    "ctc",
+                    "original",
+                )
+
+            download_source.assert_not_called()
+            normalize_audio.assert_not_called()
+            self.assertEqual(prepare_lyrics.call_args.args[2], stems[1])
+            self.assertEqual(prepare_lyrics.call_args.kwargs["timing_source"], "vocal-stem")
+            self.assertIn("vocal stem", send_job.call_args.args[2])
 
     def test_original_audio_timing_reuses_legacy_source_audio(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -1316,7 +1361,7 @@ class FailureHandlingTests(unittest.TestCase):
                 path.write_bytes(b"x")
             with (
                 patch.object(host, "lyrics_runner_path", return_value=(python, runner)),
-                patch.object(host.subprocess, "run", return_value=failed),
+                patch.object(host.lyrics, "run_registered_capture", return_value=failed),
                 patch.object(host, "send_job"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "CUDA out of memory"):
@@ -1338,7 +1383,7 @@ class FailureHandlingTests(unittest.TestCase):
                 path.write_bytes(b"x")
             with (
                 patch.object(host, "lyrics_runner_path", return_value=(python, runner)),
-                patch.object(host.subprocess, "run", return_value=completed),
+                patch.object(host.lyrics, "run_registered_capture", return_value=completed),
                 patch.object(host, "send_job"),
             ):
                 with self.assertRaisesRegex(RuntimeError, "invalid result"):

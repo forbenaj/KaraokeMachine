@@ -23,7 +23,7 @@ from .constants import (
 )
 from .logging_setup import LOGGER
 from .messaging import send_job
-from .processes import subprocess_creationflags
+from .processes import exclusive_ml_process, run_registered_capture, subprocess_creationflags
 
 LRCLIB_MAX_SEARCH_QUERIES = 4
 LRCLIB_CONFIDENT_SCORE = 0.88
@@ -942,14 +942,16 @@ def align_lyrics(job_id, vocals_path, lyrics_text):
     send_job(job_id, "status", "Aligning provided lyrics to the vocals...", phase="lyrics")
     LOGGER.info("job=%s starting CTC lyric alignment", job_id)
     try:
-        result = subprocess.run(
-            [str(python), str(runner), str(vocals_path)],
-            input=lyrics_text,
-            capture_output=True,
-            text=True,
-            encoding="utf-8", errors="replace", timeout=LYRICS_TIMEOUT_SECONDS,
-            creationflags=subprocess_creationflags(),
-        )
+        with exclusive_ml_process("CTC lyric alignment", job_id):
+            result = run_registered_capture(
+                job_id,
+                "CTC lyric alignment",
+                [str(python), str(runner), str(vocals_path)],
+                input_text=lyrics_text,
+                text=True,
+                encoding="utf-8", errors="replace", timeout_seconds=LYRICS_TIMEOUT_SECONDS,
+                creationflags=subprocess_creationflags(),
+            )
     except subprocess.TimeoutExpired as exc:
         raise TimeoutError(
             f"Lyrics extraction timed out after {LYRICS_TIMEOUT_SECONDS // 60} minutes."
@@ -988,12 +990,13 @@ def align_lyrics_with_silero_vad(job_id, vocals_path, lyrics_text):
     send_job(job_id, "status", "Detecting vocal activity with Silero VAD...", phase="lyrics")
     LOGGER.info("job=%s starting Silero VAD lyric timing", job_id)
     try:
-        result = subprocess.run(
+        result = run_registered_capture(
+            job_id,
+            "Silero VAD",
             [str(python), str(runner), str(vocals_path)],
             stdin=subprocess.DEVNULL,
-            capture_output=True,
             text=True,
-            encoding="utf-8", errors="replace", timeout=LYRICS_TIMEOUT_SECONDS,
+            encoding="utf-8", errors="replace", timeout_seconds=LYRICS_TIMEOUT_SECONDS,
             creationflags=subprocess_creationflags(),
         )
     except subprocess.TimeoutExpired as exc:

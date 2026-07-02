@@ -1,9 +1,12 @@
 import json
+import os
 import re
 import sys
 import unicodedata
 from contextlib import redirect_stdout
 from pathlib import Path
+
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 WORD_RE = re.compile(r"\S+")
 ANNOTATION_LINE_RE = re.compile(r"^\s*[\[(][^)\]]+[\])]\s*$")

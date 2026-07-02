@@ -19,6 +19,8 @@ AUTH_ERROR_MARKERS = (
     "private video",
     "age-restricted",
     "members-only",
+    "http error 403: forbidden",
+    "403: forbidden",
 )
 STEM_MP3_BITRATE = "192k"
 DEFAULT_LYRICS_TIMING_METHOD = "ctc"

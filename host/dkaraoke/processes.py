@@ -3,6 +3,8 @@ import queue
 import subprocess
 import threading
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 from .constants import ROFORMER_REMAINING_TIME_RE, ROFORMER_TOTAL_TIME_RE
 from .diagnostics import record_diagnostic
@@ -11,6 +13,7 @@ from .logging_setup import LOGGER
 ACTIVE_JOB_PROCESSES = {}
 CANCELED_JOBS = set()
 JOB_PROCESS_LOCK = threading.Lock()
+ML_PROCESS_LOCK = threading.Lock()
 
 
 class JobCanceled(RuntimeError):
@@ -51,6 +54,17 @@ def subprocess_creationflags():
     return subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
 
 
+@contextmanager
+def exclusive_ml_process(label, job_id=None):
+    LOGGER.info("job=%s waiting for exclusive ML process slot label=%s", job_id, label)
+    with ML_PROCESS_LOCK:
+        LOGGER.info("job=%s acquired exclusive ML process slot label=%s", job_id, label)
+        try:
+            yield
+        finally:
+            LOGGER.info("job=%s released exclusive ML process slot label=%s", job_id, label)
+
+
 def terminate_process_tree(process, label):
     if process.poll() is not None:
         return
@@ -77,6 +91,44 @@ def terminate_process_tree(process, label):
         process.kill()
     except OSError:
         pass
+
+
+def terminate_all_job_processes(reason):
+    with JOB_PROCESS_LOCK:
+        active = list(ACTIVE_JOB_PROCESSES.items())
+        ACTIVE_JOB_PROCESSES.clear()
+        CANCELED_JOBS.clear()
+    for job_id, (process, label) in active:
+        LOGGER.warning("job=%s terminating active child on host shutdown label=%s reason=%s", job_id, label, reason)
+        terminate_process_tree(process, label)
+
+
+def terminate_stale_dkaraoke_runners(root):
+    if os.name != "nt":
+        return
+    root_text = str(Path(root).resolve())
+    runner_names = ("roformer_runner.py", "lyrics_runner.py", "silero_vad_runner.py")
+    escaped_root = root_text.replace("'", "''")
+    runner_filter = " -or ".join(
+        f"$_.CommandLine.Contains('{name}')" for name in runner_names
+    )
+    script = (
+        f"$root = '{escaped_root}'; "
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.CommandLine -and $_.CommandLine.Contains($root) -and "
+        f"({runner_filter}) }} | "
+        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"
+    )
+    try:
+        subprocess.run(
+            ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            timeout=15,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        LOGGER.exception("could not terminate stale DKaraoKe runner processes")
 
 
 def register_job_process(job_id, process, label):
@@ -127,6 +179,36 @@ def is_job_canceled(job_id):
 def raise_if_job_canceled(job_id):
     if is_job_canceled(job_id):
         raise JobCanceled("Canceled.")
+
+
+def run_registered_capture(job_id, label, command, *, input_text=None, stdin=None, timeout_seconds=None, **kwargs):
+    raise_if_job_canceled(job_id)
+    if input_text is not None:
+        stdin = subprocess.PIPE
+    elif stdin is None:
+        stdin = subprocess.DEVNULL
+    process = subprocess.Popen(
+        command,
+        stdin=stdin,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **kwargs,
+    )
+    register_job_process(job_id, process, label)
+    try:
+        try:
+            stdout, stderr = process.communicate(input=input_text, timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            terminate_process_tree(process, label)
+            try:
+                process.communicate(timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            raise
+        raise_if_job_canceled(job_id)
+        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    finally:
+        unregister_job_process(job_id, process)
 
 
 def stream_process_lines(process, label, timeout_seconds, job_id=None):

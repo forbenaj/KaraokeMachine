@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import threading
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -12,7 +13,12 @@ from .logging_setup import DIAGNOSTICS_PATH, LOGGER, LOG_PATH
 from .messaging import NativeMessagingDisconnected, read_message, send_job
 from .paths import begin_stem_job, finish_stem_job, validate_youtube_url, video_id_from_url, app_download_dir
 from .pipeline import check_cache, extract_lyrics_timings, run_download
-from .processes import JobCanceled, cancel_job
+from .processes import (
+    JobCanceled,
+    cancel_job,
+    terminate_all_job_processes,
+    terminate_stale_dkaraoke_runners,
+)
 from .lyrics import (
     clean_metadata_text,
     create_lyric_file,
@@ -228,6 +234,7 @@ def handle_message(message):
 
 def main():
     LOGGER.info("native host started pid=%s log=%s", os.getpid(), LOG_PATH)
+    terminate_stale_dkaraoke_runners(Path(__file__).resolve().parents[2])
     record_diagnostic(
         "info",
         "native_host_started",
@@ -282,6 +289,7 @@ def main():
         )
         raise
     finally:
+        terminate_all_job_processes("native host shutdown")
         stop_audio_server()
         LOGGER.info("native host stopped")
         record_diagnostic("info", "native_host_stopped", "Native host stopped.")
