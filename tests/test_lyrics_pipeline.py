@@ -201,6 +201,31 @@ class LrcParsingTests(unittest.TestCase):
         self.assertEqual(result["artist"], "Coldplay")
         self.assertGreaterEqual(result["matchScore"], 0.88)
 
+    def test_lrclib_search_continues_after_query_timeout(self):
+        candidate = {
+            "id": 4,
+            "trackName": "Chicago",
+            "artistName": "Michael Jackson",
+            "albumName": "XSCAPE",
+            "duration": 246,
+            "plainLyrics": "I met her on my way to Chicago",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch.object(
+                host.lyrics,
+                "urlopen",
+                side_effect=[TimeoutError("timed out"), JsonResponse([candidate])],
+            ) as urlopen:
+                result = host.fetch_lrclib_lyrics(
+                    {"title": "Chicago", "artist": "Michael Jackson", "duration": 246},
+                    Path(temporary),
+                    force_refresh=True,
+                )
+
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertEqual(result["text"], "I met her on my way to Chicago")
+        self.assertEqual(result["artist"], "Michael Jackson")
+
     def test_lrclib_force_refresh_ignores_and_replaces_cached_lyrics(self):
         candidate = {
             "id": 3,
@@ -349,6 +374,39 @@ class PipelineOrderingTests(unittest.TestCase):
                 force_refresh=False,
             )
             self.assertEqual(send_job.call_args.args[1], "lyrics")
+
+    def test_lrclib_search_infers_topic_channel_artist_for_short_title(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output_dir = Path(temporary)
+            with (
+                patch.object(host, "app_download_dir", return_value=output_dir),
+                patch.object(host.app, "urlopen", return_value=JsonResponse({
+                    "title": "Chicago",
+                    "author_name": "Michael Jackson - Topic",
+                })),
+                patch.object(host, "fetch_lrclib_lyrics", return_value={
+                    "text": "I met her on my way to Chicago",
+                    "segments": [],
+                    "source": "lrclib",
+                    "message": "Loaded lyrics from LRCLIB.",
+                }) as fetch_lrclib_lyrics,
+                patch.object(host, "send_job"),
+            ):
+                host.execute_message({
+                    "action": "searchLrclib",
+                    "jobId": "lyrics-job",
+                    "url": "https://www.youtube.com/watch?v=wAoq__SQpwk",
+                    "title": "Chicago",
+                    "artist": "",
+                    "duration": 246,
+                    "forceRefresh": True,
+                })
+
+            fetch_lrclib_lyrics.assert_called_once_with(
+                {"title": "Chicago", "artist": "Michael Jackson", "duration": 246},
+                output_dir,
+                force_refresh=True,
+            )
 
     def test_cache_check_prefers_local_ctc_over_lrclib(self):
         with tempfile.TemporaryDirectory() as temporary:

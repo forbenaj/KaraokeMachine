@@ -1,6 +1,10 @@
+import json
 import os
+import re
 import sys
 import threading
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from .audio_server import stop_audio_server
 from .diagnostics import record_diagnostic, record_external_diagnostic
@@ -8,7 +12,50 @@ from .logging_setup import DIAGNOSTICS_PATH, LOGGER, LOG_PATH
 from .messaging import NativeMessagingDisconnected, read_message, send_job
 from .paths import begin_stem_job, finish_stem_job, validate_youtube_url, video_id_from_url, app_download_dir
 from .pipeline import check_cache, extract_lyrics_timings, run_download
-from .lyrics import fetch_lrclib_lyrics
+from .lyrics import clean_metadata_text, fetch_lrclib_lyrics
+
+YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
+YOUTUBE_METADATA_TIMEOUT_SECONDS = 5
+
+
+def artist_from_youtube_channel_name(value):
+    channel = " ".join(str(value or "").split())
+    if not channel:
+        return ""
+    topic_match = re.match(r"^(.+?)\s*-\s*Topic$", channel, flags=re.IGNORECASE)
+    if topic_match:
+        return topic_match.group(1).strip()
+    vevo_match = re.match(r"^(.+?)VEVO$", channel, flags=re.IGNORECASE)
+    if vevo_match:
+        return vevo_match.group(1).strip()
+    return ""
+
+
+def youtube_oembed_artist(url):
+    request = Request(
+        f"{YOUTUBE_OEMBED_URL}?{urlencode({'url': url, 'format': 'json'})}",
+        headers={"User-Agent": "Karaoke Machine!/1.10 (local Chrome extension)"},
+    )
+    with urlopen(request, timeout=YOUTUBE_METADATA_TIMEOUT_SECONDS) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, dict):
+        return ""
+    return artist_from_youtube_channel_name(payload.get("author_name"))
+
+
+def enrich_lrclib_search_info(url, title, artist, duration):
+    info = {"title": title, "artist": artist, "duration": duration}
+    if artist.strip() or len(clean_metadata_text(title).split()) > 2:
+        return info
+    try:
+        inferred_artist = youtube_oembed_artist(url)
+    except Exception as exc:
+        LOGGER.info("could not infer YouTube author for LRCLIB search: %s", exc)
+        return info
+    if inferred_artist:
+        info["artist"] = inferred_artist
+    return info
+
 
 def execute_message(message):
     if not isinstance(message, dict):
@@ -27,11 +74,17 @@ def execute_message(message):
     if action == "searchLrclib":
         url = validate_youtube_url(str(message.get("url") or ""))
         video_id = video_id_from_url(url)
-        lyrics = fetch_lrclib_lyrics({
-            "title": str(message.get("title") or ""),
-            "artist": str(message.get("artist") or ""),
-            "duration": message.get("duration"),
-        }, app_download_dir(video_id), force_refresh=message.get("forceRefresh") is True)
+        lyrics_info = enrich_lrclib_search_info(
+            url,
+            str(message.get("title") or ""),
+            str(message.get("artist") or ""),
+            message.get("duration"),
+        )
+        lyrics = fetch_lrclib_lyrics(
+            lyrics_info,
+            app_download_dir(video_id),
+            force_refresh=message.get("forceRefresh") is True,
+        )
         send_job(
             job_id, "lyrics", lyrics.get("message") or "LRCLIB search complete.",
             lyrics=lyrics, videoId=video_id,

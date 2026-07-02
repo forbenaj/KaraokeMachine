@@ -766,6 +766,24 @@ function elementTextOrContent(element) {
   return element?.textContent || element?.getAttribute?.("content") || "";
 }
 
+function artistFromYouTubePageData() {
+  const scriptText = Array.from(document.scripts)
+    .map((script) => script.textContent || "")
+    .find((text) => text.includes("ownerChannelName") || text.includes("author"));
+  if (!scriptText) return "";
+  const patterns = [
+    /"ownerChannelName"\s*:\s*"([^"]+)"/,
+    /"author"\s*:\s*"([^"]+)"/,
+    /"author"\s*:\s*\{\s*"simpleText"\s*:\s*"([^"]+)"/,
+  ];
+  for (const pattern of patterns) {
+    const match = scriptText.match(pattern);
+    const artist = artistFromYouTubeChannelName(match?.[1]);
+    if (artist) return artist;
+  }
+  return "";
+}
+
 function currentSongArtist() {
   const selectors = [
     "ytd-watch-metadata #owner ytd-channel-name #text a",
@@ -785,7 +803,7 @@ function currentSongArtist() {
     const artist = artistFromYouTubeChannelName(elementTextOrContent(document.querySelector(selector)));
     if (artist) return artist;
   }
-  return "";
+  return artistFromYouTubePageData();
 }
 
 function currentVideoDuration() {

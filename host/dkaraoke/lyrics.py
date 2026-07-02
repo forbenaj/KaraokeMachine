@@ -530,7 +530,12 @@ def fetch_lrclib_lyrics(info, output_dir, force_refresh=False):
     for params in queries:
         searched_count += 1
         LOGGER.info("searching LRCLIB params=%r", params)
-        for candidate in fetch_lrclib_candidates(params):
+        try:
+            candidates = fetch_lrclib_candidates(params)
+        except Exception as exc:
+            LOGGER.info("LRCLIB query failed params=%r error=%s", params, exc)
+            continue
+        for candidate in candidates:
             candidates_by_key.setdefault(lrclib_candidate_key(candidate), candidate)
         ranked = rank_lrclib_candidates(candidates_by_key.values(), metadata_variants)
         if ranked and ranked[0][0] >= LRCLIB_CONFIDENT_SCORE:
