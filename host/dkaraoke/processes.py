@@ -8,6 +8,15 @@ from .constants import ROFORMER_REMAINING_TIME_RE, ROFORMER_TOTAL_TIME_RE
 from .diagnostics import record_diagnostic
 from .logging_setup import LOGGER
 
+ACTIVE_JOB_PROCESSES = {}
+CANCELED_JOBS = set()
+JOB_PROCESS_LOCK = threading.Lock()
+
+
+class JobCanceled(RuntimeError):
+    pass
+
+
 def format_remaining_time(seconds):
     seconds = max(0, int(round(seconds)))
     minutes, seconds = divmod(seconds, 60)
@@ -70,7 +79,57 @@ def terminate_process_tree(process, label):
         pass
 
 
-def stream_process_lines(process, label, timeout_seconds):
+def register_job_process(job_id, process, label):
+    if not job_id or process is None:
+        return
+    with JOB_PROCESS_LOCK:
+        ACTIVE_JOB_PROCESSES[job_id] = (process, label)
+        canceled = job_id in CANCELED_JOBS
+    if canceled:
+        terminate_process_tree(process, label)
+
+
+def unregister_job_process(job_id, process=None):
+    if not job_id:
+        return
+    with JOB_PROCESS_LOCK:
+        current = ACTIVE_JOB_PROCESSES.get(job_id)
+        removed = False
+        if current and (process is None or current[0] is process):
+            ACTIVE_JOB_PROCESSES.pop(job_id, None)
+            removed = True
+        if (removed or not current) and job_id in CANCELED_JOBS:
+            CANCELED_JOBS.discard(job_id)
+
+
+def cancel_job(job_id):
+    if not job_id:
+        return False
+    with JOB_PROCESS_LOCK:
+        CANCELED_JOBS.add(job_id)
+        current = ACTIVE_JOB_PROCESSES.get(job_id)
+    if current:
+        process, label = current
+        LOGGER.info("job=%s cancellation requested; terminating %s", job_id, label)
+        terminate_process_tree(process, label)
+        return True
+    LOGGER.info("job=%s cancellation requested; no active child process", job_id)
+    return False
+
+
+def is_job_canceled(job_id):
+    if not job_id:
+        return False
+    with JOB_PROCESS_LOCK:
+        return job_id in CANCELED_JOBS
+
+
+def raise_if_job_canceled(job_id):
+    if is_job_canceled(job_id):
+        raise JobCanceled("Canceled.")
+
+
+def stream_process_lines(process, label, timeout_seconds, job_id=None):
     """Yield merged process output without allowing a silent child to hang forever."""
     if process.stdout is None:
         raise RuntimeError(f"{label} did not expose its output stream.")
@@ -97,6 +156,7 @@ def stream_process_lines(process, label, timeout_seconds):
     ).start()
     deadline = time.monotonic() + timeout_seconds
     while True:
+        raise_if_job_canceled(job_id)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             record_diagnostic(

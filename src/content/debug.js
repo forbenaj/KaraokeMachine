@@ -10,7 +10,7 @@ const DEBUG_PROCESS_DEFINITIONS = [
   ["audioLoad", "processAudio"],
 ];
 const DEBUG_PHASE_KEYS = new Set(["cache", "download", "separate", "convert", "lyricsSearch", "lyricsTiming"]);
-const DEBUG_TERMINAL_STATUSES = new Set(["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"]);
+const DEBUG_TERMINAL_STATUSES = new Set(["cacheCheck", "complete", "lyrics", "lyricsComplete", "error", "canceled"]);
 const DEBUG_MAX_LOG_ENTRIES = 180;
 const DIAGNOSTIC_LEVELS = new Set(["warning", "error"]);
 

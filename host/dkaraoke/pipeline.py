@@ -29,11 +29,15 @@ from .lyrics import (
 from .messaging import send_job
 from .paths import app_download_dir, stem_job_active, stem_ready_event, timing_job_lock, validate_youtube_url, video_id_from_url
 from .processes import (
+    JobCanceled,
     format_remaining_time,
+    raise_if_job_canceled,
+    register_job_process,
     roformer_progress_from_line,
     stream_process_lines,
     subprocess_creationflags,
     terminate_process_tree,
+    unregister_job_process,
 )
 from .stems import compress_stems, resolve_cached_stems, stem_paths
 from .youtube import has_auth_error, require_tools, write_cookie_file, ytdlp_runtime_args
@@ -116,6 +120,7 @@ def roformer_paths():
 
 
 def run_roformer(job_id, source_path, output_dir):
+    raise_if_job_canceled(job_id)
     python, repo, checkpoint, runner = roformer_paths()
     if any(not path.exists() for path in (python, repo, checkpoint, runner)):
         raise FileNotFoundError(
@@ -151,10 +156,11 @@ def run_roformer(job_id, source_path, output_dir):
             errors="replace",
             creationflags=subprocess_creationflags(),
         )
+        register_job_process(job_id, process, "RoFormer")
         last_line = ""
         roformer_total_seconds = None
         roformer_progress = 0.0
-        for raw_line in stream_process_lines(process, "RoFormer", ROFORMER_TIMEOUT_SECONDS):
+        for raw_line in stream_process_lines(process, "RoFormer", ROFORMER_TIMEOUT_SECONDS, job_id=job_id):
             line = raw_line.strip()
             if not line:
                 continue
@@ -190,8 +196,15 @@ def run_roformer(job_id, source_path, output_dir):
             raise RuntimeError(last_line or f"RoFormer exited with code {return_code}.")
         if not all(is_complete_file(path) for path in (instrumental_path, vocals_path)):
             raise FileNotFoundError("RoFormer finished, but both complete stem files were not found.")
+        raise_if_job_canceled(job_id)
         roformer_completed = True
         return compress_stems(job_id, instrumental_path, vocals_path)
+    except JobCanceled:
+        if process is not None:
+            terminate_process_tree(process, "RoFormer")
+        for path in (instrumental_path, vocals_path):
+            unlink_best_effort(path, "canceled RoFormer output cleanup")
+        raise
     except Exception:
         if process is not None:
             terminate_process_tree(process, "RoFormer")
@@ -208,9 +221,12 @@ def run_roformer(job_id, source_path, output_dir):
             exc=sys.exc_info()[1],
         )
         raise
+    finally:
+        unregister_job_process(job_id, process)
 
 
 def download_source_audio(job_id, url, video_id, cookies, output_template, phase="download"):
+    raise_if_job_canceled(job_id)
     yt_dlp = require_tools()
     download_label = "Downloading original audio for lyric timing" if phase == "lyrics" else "Downloading source audio"
     base_command = [
@@ -267,9 +283,10 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
                 errors="replace",
                 creationflags=subprocess_creationflags(),
             )
+            register_job_process(job_id, process, "yt-dlp audio download")
 
             for raw_line in stream_process_lines(
-                process, "yt-dlp audio download", YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
+                process, "yt-dlp audio download", YTDLP_DOWNLOAD_TIMEOUT_SECONDS, job_id=job_id,
             ):
                 line = raw_line.strip()
                 if not line:
@@ -306,6 +323,7 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
                         phase=phase,
                     )
                     raise FileNotFoundError("yt-dlp finished, but the source audio file was not found.")
+                raise_if_job_canceled(job_id)
                 return source_path
 
             output_text = "\n".join(output_lines)
@@ -340,7 +358,15 @@ def download_source_audio(job_id, url, video_id, cookies, output_template, phase
             phase=phase,
         )
         raise RuntimeError(last_line or "yt-dlp could not download this audio.")
+    except JobCanceled:
+        if "process" in locals():
+            terminate_process_tree(process, "yt-dlp audio download")
+        if "source_path" in locals() and source_path:
+            unlink_best_effort(source_path, "canceled source audio cleanup")
+        raise
     finally:
+        if "process" in locals():
+            unregister_job_process(job_id, process)
         if cookie_path and cookie_path.exists():
             unlink_best_effort(cookie_path, "download cookie cleanup")
 
@@ -591,6 +617,7 @@ def publish_stems_and_complete(
 
 
 def run_download(job_id, raw_url, cookies, lyrics_timing=None):
+    raise_if_job_canceled(job_id)
     url = validate_youtube_url(raw_url)
     video_id = video_id_from_url(url)
     output_dir = app_download_dir(video_id)
@@ -603,6 +630,7 @@ def run_download(job_id, raw_url, cookies, lyrics_timing=None):
         LOGGER.info("job=%s video=%s using cached stems", job_id, video_id)
         unlink_best_effort(legacy_audio_path, "legacy source audio cleanup")
         send_job(job_id, "status", "Found cached separated stems.", phase="cache")
+        raise_if_job_canceled(job_id)
         publish_stems_and_complete(
             job_id, video_id, instrumental_path, vocals_path, cache_hit=True,
         )
@@ -613,11 +641,14 @@ def run_download(job_id, raw_url, cookies, lyrics_timing=None):
         send_job(job_id, "status", "Legacy downloaded audio found. Extracting missing stems...", phase="separate")
         if timing_request and timing_request["timingSchedule"] == "lyrics-first":
             run_original_audio_timing_inline(video_id, output_dir, legacy_audio_path, timing_request)
+            raise_if_job_canceled(job_id)
             timing_request = None
         if timing_request and timing_request["timingSchedule"] == "parallel":
             start_original_audio_timing_thread(video_id, output_dir, legacy_audio_path, timing_request)
             timing_request = None
+        raise_if_job_canceled(job_id)
         instrumental_path, vocals_path = run_roformer(job_id, legacy_audio_path, separated_dir)
+        raise_if_job_canceled(job_id)
         publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
         if timing_request:
             run_original_audio_timing_inline(video_id, output_dir, legacy_audio_path, timing_request)
@@ -630,11 +661,14 @@ def run_download(job_id, raw_url, cookies, lyrics_timing=None):
         )
         if timing_request and timing_request["timingSchedule"] == "lyrics-first":
             run_original_audio_timing_inline(video_id, output_dir, source_path, timing_request)
+            raise_if_job_canceled(job_id)
             timing_request = None
         if timing_request and timing_request["timingSchedule"] == "parallel":
             start_original_audio_timing_thread(video_id, output_dir, source_path, timing_request)
             timing_request = None
+        raise_if_job_canceled(job_id)
         instrumental_path, vocals_path = run_roformer(job_id, source_path, separated_dir)
+        raise_if_job_canceled(job_id)
         publish_stems_and_complete(job_id, video_id, instrumental_path, vocals_path)
         if timing_request:
             run_original_audio_timing_inline(video_id, output_dir, source_path, timing_request)

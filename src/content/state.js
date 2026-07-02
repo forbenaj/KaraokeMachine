@@ -28,6 +28,8 @@ const TIMING_SOURCE_ID = "dkaraoke-setting-timing-source";
 const TIMING_SCHEDULE_ID = "dkaraoke-setting-timing-schedule";
 const QUEUE_BUTTON_ID = "dkaraoke-queue-button";
 const QUEUE_PANEL_ID = "dkaraoke-queue-panel";
+const QUEUE_DIALOG_ID = "dkaraoke-processed-songs-dialog";
+const QUEUE_COMPACT_LIMIT = 10;
 const DEFAULT_LYRICS_STYLE = "classic";
 const LYRICS_STYLES = new Set(["arcade", "classic", "simple"]);
 const DEFAULT_TIMING_METHOD = "ctc";
@@ -109,7 +111,10 @@ let lyricsEnabled = true;
 let lyricsStyle = DEFAULT_LYRICS_STYLE;
 let settings = { ...DEFAULT_SETTINGS };
 let queueItems = [];
+let processedSongItems = [];
 let queuePanelOpen = false;
+let processedSongsDialogOpen = false;
+let processedSongsSearch = "";
 let lyricsReady = false;
 let lyricsText = "";
 let lyricSegments = [];
@@ -183,8 +188,14 @@ const I18N = {
     debugLogAria: "Karaoke Machine debug log",
     debugTitle: "Karaoke Machine debug",
     liveProcessTrace: "Live process trace",
-    queue: "Queue",
-    queueAria: "Karaoke Machine processing queue",
+    queue: "Processed songs",
+    queueAria: "Karaoke Machine processed songs",
+    viewAll: "View all",
+    processedSongs: "Processed songs",
+    searchSongs: "Search songs",
+    noProcessedSongs: "No processed songs yet.",
+    remove: "Remove",
+    canceled: "Canceled",
     youtubeSong: "YouTube song",
     processingSong: "Processing song",
     queued: "Queued",
@@ -662,6 +673,7 @@ const STATUS_TRANSLATIONS = {
   "Compressing separated stems to MP3...": "monitorExtracting",
   "Download failed.": "downloadFailed",
   "LRCLIB search complete.": "lrclibLyricsLoaded",
+  "Canceled.": "canceled",
 };
 
 function normalizeLanguage(value) {

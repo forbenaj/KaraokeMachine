@@ -115,7 +115,7 @@ function updateMonitorFromBackend(message) {
   if (phase === "download") setMonitorActivity(message.jobId, "audio", t("monitorDownloading"));
   else if (["convert", "separate"].includes(phase)) setMonitorActivity(message.jobId, "audio", t("monitorExtracting"));
   if (message.status === "stemsReady") setMonitorActivity(message.jobId, "audio", "");
-  if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"].includes(message.status)) {
+  if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error", "canceled"].includes(message.status)) {
     clearMonitorJob(message.jobId);
   }
   return false;

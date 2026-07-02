@@ -12,6 +12,7 @@ from .logging_setup import DIAGNOSTICS_PATH, LOGGER, LOG_PATH
 from .messaging import NativeMessagingDisconnected, read_message, send_job
 from .paths import begin_stem_job, finish_stem_job, validate_youtube_url, video_id_from_url, app_download_dir
 from .pipeline import check_cache, extract_lyrics_timings, run_download
+from .processes import JobCanceled, cancel_job
 from .lyrics import clean_metadata_text, fetch_lrclib_lyrics
 
 YOUTUBE_OEMBED_URL = "https://www.youtube.com/oembed"
@@ -68,6 +69,9 @@ def execute_message(message):
     if not job_id:
         raise ValueError("Missing job ID.")
     LOGGER.info("job=%s action=%s received", job_id, action)
+    if action == "cancelJob":
+        cancel_job(job_id)
+        return
     if action == "checkCache":
         check_cache(job_id, str(message.get("url") or ""))
         return
@@ -122,10 +126,13 @@ def handle_message(message):
         raise ValueError("Missing job ID.")
     supported = {
         "checkCache", "searchLrclib", "extractLyricsTimings",
-        "prepareKaraoke",
+        "prepareKaraoke", "cancelJob",
     }
     if action not in supported:
         raise ValueError("Unsupported backend action.")
+    if action == "cancelJob":
+        execute_message(message)
+        return
 
     stem_video_id = None
     if action == "prepareKaraoke":
@@ -136,6 +143,12 @@ def handle_message(message):
     def run():
         try:
             execute_message(message)
+        except JobCanceled as exc:
+            LOGGER.info("job=%s canceled", job_id)
+            try:
+                send_job(job_id, "canceled", str(exc) or "Canceled.")
+            except NativeMessagingDisconnected:
+                return
         except NativeMessagingDisconnected:
             return
         except Exception as exc:

@@ -33,7 +33,7 @@ document.addEventListener("visibilitychange", () => {
 
 chrome.runtime.onMessage.addListener((message) => {
   if (message?.type === "dkaraoke-queue") {
-    updateQueueUI(message.queue || []);
+    updateQueueUI(message.queue || [], message.processedSongs || []);
     return;
   }
   if (message?.type !== "dkaraoke-status") return;
@@ -180,6 +180,11 @@ chrome.runtime.onMessage.addListener((message) => {
       setProcessStatus(t("separatedAudioReady"), "success");
     }
     activeJobStemsReady = false;
+  } else if (message.status === "canceled") {
+    activeJobId = null;
+    activeJobStemsReady = false;
+    setProcessing(false);
+    setProcessStatus(message.message || t("canceled"), "idle");
   } else if (message.status === "error") {
     activeJobId = null;
     activeJobStemsReady = false;

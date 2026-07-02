@@ -5,7 +5,11 @@ const jobs = new Map();
 const downloadQueue = [];
 let activeDownloadJobId = null;
 const deferredTimingPosts = new Map();
-const DOWNLOAD_TERMINAL_TYPES = new Set(["complete", "error"]);
+const processedSongs = [];
+const canceledJobIds = new Set();
+const COMPACT_PROCESSED_LIMIT = 10;
+const PROCESSED_HISTORY_LIMIT = 100;
+const DOWNLOAD_TERMINAL_TYPES = new Set(["complete", "error", "canceled"]);
 const DEFAULT_TIMING_METHOD = "ctc";
 const TIMING_METHODS = new Set([DEFAULT_TIMING_METHOD, "silero-vad"]);
 const DEFAULT_TIMING_SOURCE = "original";
@@ -189,12 +193,8 @@ function sendToTab(tabId, payload) {
   });
 }
 
-function queueSnapshot() {
-  const orderedJobs = [
-    activeDownloadJobId ? jobs.get(activeDownloadJobId) : null,
-    ...downloadQueue,
-  ].filter(Boolean);
-  return orderedJobs.map((job, index) => ({
+function serializeDownloadJob(job, index = 0, count = 0) {
+  return {
     jobId: job.jobId,
     videoId: job.videoId || "",
     url: job.url || "",
@@ -203,15 +203,64 @@ function queueSnapshot() {
     message: job.message || "",
     phase: job.phase || "",
     progress: Number.isFinite(job.progress) ? job.progress : null,
-    position: index + 1,
-    count: orderedJobs.length,
+    position: count ? index + 1 : job.position || 0,
+    count: count || job.count || 0,
     createdAt: job.createdAt || 0,
     startedAt: job.startedAt || 0,
-  }));
+    finishedAt: job.finishedAt || 0,
+  };
+}
+
+function upsertProcessedSong(job, fields = {}) {
+  if (!job?.jobId) return;
+  const index = processedSongs.findIndex((item) => item.jobId === job.jobId);
+  const next = {
+    ...serializeDownloadJob(job),
+    ...fields,
+    finishedAt: fields.finishedAt || Date.now(),
+  };
+  if (index >= 0) processedSongs.splice(index, 1);
+  processedSongs.unshift(next);
+  if (processedSongs.length > PROCESSED_HISTORY_LIMIT) {
+    processedSongs.length = PROCESSED_HISTORY_LIMIT;
+  }
+}
+
+function removeProcessedSong(jobId) {
+  const index = processedSongs.findIndex((item) => item.jobId === jobId);
+  if (index >= 0) processedSongs.splice(index, 1);
+}
+
+function activeQueueSnapshot() {
+  const orderedJobs = [
+    activeDownloadJobId ? jobs.get(activeDownloadJobId) : null,
+    ...downloadQueue,
+  ].filter(Boolean);
+  return orderedJobs.map((job, index) => serializeDownloadJob(job, index, orderedJobs.length));
+}
+
+function queueSnapshot() {
+  const active = activeQueueSnapshot();
+  const seen = new Set(active.map((item) => item.jobId));
+  const recentProcessed = processedSongs.filter((item) => !seen.has(item.jobId));
+  return [...active, ...recentProcessed].slice(0, COMPACT_PROCESSED_LIMIT);
+}
+
+function processedSongsSnapshot() {
+  const active = activeQueueSnapshot();
+  const seen = new Set(active.map((item) => item.jobId));
+  return [
+    ...active,
+    ...processedSongs.filter((item) => !seen.has(item.jobId)),
+  ].slice(0, PROCESSED_HISTORY_LIMIT);
 }
 
 function broadcastQueue() {
-  const payload = { type: "dkaraoke-queue", queue: queueSnapshot() };
+  const payload = {
+    type: "dkaraoke-queue",
+    queue: queueSnapshot(),
+    processedSongs: processedSongsSnapshot(),
+  };
   chrome.tabs.query({ url: ["https://www.youtube.com/*"] }, (tabs) => {
     if (chrome.runtime.lastError) {
       recordDiagnostic({
@@ -242,6 +291,13 @@ function failAllJobs(message) {
     });
   }
   for (const [jobId, job] of jobs) {
+    if (job.kind === "download") {
+      upsertProcessedSong(job, {
+        status: "error",
+        message,
+        phase: job.phase || "",
+      });
+    }
     sendToTab(job.tabId, {
       type: "dkaraoke-status",
       jobId,
@@ -260,6 +316,13 @@ function failAllJobs(message) {
 function failJob(jobId, message) {
   const job = jobs.get(jobId);
   if (!job) return;
+  if (job.kind === "download") {
+    upsertProcessedSong(job, {
+      status: "error",
+      message,
+      phase: job.phase || "",
+    });
+  }
   sendToTab(job.tabId, {
     type: "dkaraoke-status",
     jobId,
@@ -291,6 +354,82 @@ function failDeferredTimings(videoId, message) {
   }
 }
 
+function postCancelToHost(jobId) {
+  try {
+    ensureNativePort().postMessage({
+      action: "cancelJob",
+      jobId,
+    });
+  } catch (error) {
+    recordDiagnostic({
+      level: "warning",
+      event: "native_cancel_failed",
+      message: String(error),
+      jobId,
+    });
+  }
+}
+
+function cancelAssociatedTiming(job) {
+  const timingJobId = job?.lyricsTiming?.jobId || "";
+  if (!timingJobId) return;
+  canceledJobIds.add(timingJobId);
+  if (job.hostPosted) postCancelToHost(timingJobId);
+  jobs.delete(timingJobId);
+  clearJobTimeout(timingJobId);
+  deferredTimingPosts.delete(timingJobId);
+}
+
+function removeQueueItem(message, sendResponse) {
+  const jobId = message.jobId;
+  const queuedIndex = downloadQueue.findIndex((job) => job.jobId === jobId);
+  if (queuedIndex >= 0) {
+    const [job] = downloadQueue.splice(queuedIndex, 1);
+    sendToTab(job.tabId, {
+      type: "dkaraoke-status",
+      jobId,
+      status: "canceled",
+      message: "Canceled.",
+      videoId: job.videoId || "",
+    });
+    jobs.delete(jobId);
+    clearJobTimeout(jobId);
+    cancelAssociatedTiming(job);
+    removeProcessedSong(jobId);
+    broadcastQueue();
+    sendResponse({ ok: true, queue: queueSnapshot(), processedSongs: processedSongsSnapshot() });
+    return;
+  }
+
+  const job = jobs.get(jobId);
+  if (job?.kind === "download") {
+    canceledJobIds.add(jobId);
+    cancelAssociatedTiming(job);
+    postCancelToHost(jobId);
+    sendToTab(job.tabId, {
+      type: "dkaraoke-status",
+      jobId,
+      status: "canceled",
+      message: "Canceled.",
+      videoId: job.videoId || "",
+    });
+    clearJobTimeout(jobId);
+    jobs.delete(jobId);
+    removeProcessedSong(jobId);
+    if (activeDownloadJobId === jobId) {
+      activeDownloadJobId = null;
+      startNextDownload();
+    }
+    broadcastQueue();
+    sendResponse({ ok: true, queue: queueSnapshot(), processedSongs: processedSongsSnapshot() });
+    return;
+  }
+
+  removeProcessedSong(jobId);
+  broadcastQueue();
+  sendResponse({ ok: true, queue: queueSnapshot(), processedSongs: processedSongsSnapshot() });
+}
+
 function ensureNativePort() {
   if (nativePort) return nativePort;
 
@@ -308,6 +447,12 @@ function ensureNativePort() {
     }
     const job = jobs.get(hostMessage.jobId);
     if (!job) {
+      if (canceledJobIds.has(hostMessage.jobId)) {
+        if (["complete", "error", "canceled"].includes(hostMessage.type)) {
+          canceledJobIds.delete(hostMessage.jobId);
+        }
+        return;
+      }
       recordDiagnostic({
         level: "warning",
         event: "unknown_host_job",
@@ -346,8 +491,16 @@ function ensureNativePort() {
       hasStems: hostMessage.hasStems === true
     });
 
-    if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error"].includes(hostMessage.type)) {
+    if (["cacheCheck", "complete", "lyrics", "lyricsComplete", "error", "canceled"].includes(hostMessage.type)) {
       clearJobTimeout(hostMessage.jobId);
+      if (job.kind === "download" && DOWNLOAD_TERMINAL_TYPES.has(hostMessage.type)) {
+        upsertProcessedSong(job, {
+          status: hostMessage.type,
+          message: statusMessage,
+          phase: hostMessage.phase || job.phase || "",
+          progress: Number.isFinite(hostMessage.progress) ? hostMessage.progress : job.progress,
+        });
+      }
       jobs.delete(hostMessage.jobId);
       if (job.kind === "download" && activeDownloadJobId === hostMessage.jobId) {
         activeDownloadJobId = null;
@@ -395,6 +548,10 @@ function postDownloadToHost(job) {
   }
 
   collectYouTubeCookies((cookies) => {
+    if (canceledJobIds.has(job.jobId) || jobs.get(job.jobId) !== job) {
+      canceledJobIds.delete(job.jobId);
+      return;
+    }
     try {
       port.postMessage({
         action: "prepareKaraoke",
@@ -716,9 +873,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ ok });
     return undefined;
   }
+  const existingJobMessageTypes = new Set(["dkaraoke-remove-queue-item"]);
+  const joblessMessageTypes = new Set(["dkaraoke-get-queue"]);
   if (
-    message.type !== "dkaraoke-get-queue"
-    && (typeof message.jobId !== "string" || !message.jobId || jobs.has(message.jobId))
+    !joblessMessageTypes.has(message.type)
+    && (typeof message.jobId !== "string" || !message.jobId || (!existingJobMessageTypes.has(message.type) && jobs.has(message.jobId)))
   ) {
     recordDiagnostic({
       level: "warning",
@@ -739,7 +898,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   } else if (message?.type === "dkaraoke-extract-lyrics-timings") {
     extractLyricsTimings(message, sender.tab?.id, sendResponse);
   } else if (message?.type === "dkaraoke-get-queue") {
-    sendResponse({ ok: true, queue: queueSnapshot() });
+    sendResponse({ ok: true, queue: queueSnapshot(), processedSongs: processedSongsSnapshot() });
+    return undefined;
+  } else if (message?.type === "dkaraoke-remove-queue-item") {
+    removeQueueItem(message, sendResponse);
     return undefined;
   } else {
     return undefined;
