@@ -1,0 +1,40 @@
+/* ==========================================================================
+   Design Tokens
+   ========================================================================== */
+
+:root {
+  --dk-ink: #000000;
+  --dk-paper: #ffffff;
+  --dk-note: #fffde1;
+  --dk-yellow: #ffff00;
+  --dk-cyan: #00ffff;
+  --dk-magenta: #ff00b8;
+  --dk-red: #ff2d2d;
+  --dk-green: #00e59b;
+  --dk-gray: #8f8f8f;
+  --dk-disabled: #bcbcbc;
+  --dk-success: #006b49;
+  --dk-error: #b00020;
+  --dk-body-copy: #4b4b4b;
+
+  --dk-ui-font: Bahnschrift, "Arial Narrow", "Segoe UI", sans-serif;
+  --dk-body-font: Aptos, "Segoe UI", sans-serif;
+  --dk-display-font: Impact, Haettenschweiler, "Arial Black", sans-serif;
+
+  --dk-border-sm: 3px solid var(--dk-ink);
+  --dk-border-lg: 4px solid var(--dk-ink);
+  --dk-panel-shadow: 6px 6px 0 var(--dk-ink);
+  --dk-small-shadow: 3px 3px 0 var(--dk-ink);
+  --dk-text-shadow: 3px 3px 0 var(--dk-ink);
+  --dk-page-bg:
+    radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1px),
+    linear-gradient(135deg, var(--dk-yellow) 0%, var(--dk-cyan) 50%, var(--dk-magenta) 100%);
+  --dk-page-bg-muted:
+    radial-gradient(rgba(0, 0, 0, 0.12) 1px, transparent 1px),
+    linear-gradient(135deg, #e4e4e4 0%, #b9b9b9 50%, #777777 100%);
+
+  --dk-focus-ring: 2px solid #8dafff;
+  --dk-overlay-shadow: 0 3px 4px rgba(0, 0, 0, 0.95), 0 0 18px rgba(218, 95, 165, 0.85);
+  --dk-classic-transition: 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+

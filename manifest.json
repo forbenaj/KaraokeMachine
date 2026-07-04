@@ -24,7 +24,7 @@
   "content_scripts": [
     {
       "matches": ["https://www.youtube.com/*"],
-      "css": ["styles.css"],
+      "css": ["styles/tokens.css", "styles/extension.css"],
       "js": [
         "src/content/state.js",
         "src/content/debug.js",
