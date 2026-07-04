@@ -22,7 +22,10 @@ function ensureLyricsOverlay() {
 function compactLyricsProcessText(message, state = "idle") {
   const text = String(localizeMessage(message) || "").toLowerCase();
   if (state === "error" || /\b(error|failed|cannot|could not|timed out|missing)\b/.test(text)) return "Error";
+  if (/\b(no reliable match|no lyrics|not found)\b/.test(text) || /\bno\b.*\bmatch\b/.test(text)) return "No lyrics";
   if (/\b(sav\w*|writ\w*)\b/.test(text) && state !== "busy") return "Saved";
+  if (state === "success") return "Ready";
+  if (state === "info" && /\b(lyric|lyrics|lrclib)\b/.test(text)) return "Lyrics";
   if (state !== "busy") return "Waiting...";
   if (/\b(search|lrclib)\b/.test(text)) return "Searching...";
   if (/\b(extract|align|timing|detect|refin|vocal)\b/.test(text)) return "Extracting...";
@@ -32,14 +35,13 @@ function compactLyricsProcessText(message, state = "idle") {
   return "Processing...";
 }
 
-function updateLyricsWatermark() {
+function updateLyricsIndicator() {
   const editor = document.getElementById(LYRICS_TEXT_ID);
-  const watermark = document.getElementById(LYRICS_WATERMARK_ID);
-  if (!editor || !watermark) return;
+  const indicator = document.getElementById(LYRICS_INDICATOR_ID);
+  if (!editor || !indicator) return;
   const state = editor.dataset.processState || "idle";
-  watermark.textContent = editor.dataset.processText || "Waiting...";
-  watermark.dataset.state = state;
-  watermark.hidden = Boolean(editor.value.trim()) && !["busy", "error"].includes(state);
+  indicator.textContent = editor.dataset.processText || "Waiting...";
+  indicator.dataset.state = state;
 }
 
 function updateLyricsMonitor(message, state = "idle") {
@@ -51,7 +53,7 @@ function updateLyricsMonitor(message, state = "idle") {
     editor.dataset.processText = processText;
     editor.title = localized;
   }
-  updateLyricsWatermark();
+  updateLyricsIndicator();
 }
 
 function setLyricsStatus(message, state = "idle") {
@@ -439,7 +441,7 @@ function setLyrics(data, updateEditor = true) {
     const editor = document.getElementById(LYRICS_TEXT_ID);
     if (editor) {
       editor.value = lyricsText;
-      updateLyricsWatermark();
+      updateLyricsIndicator();
     }
   }
   renderedLyricSegment = null;

@@ -87,7 +87,10 @@ function mountKaraokeMenu() {
       const toggle = document.createElement("button");
       toggle.id = `dkaraoke-${stem}`;
       toggle.type = "button";
-      toggle.textContent = stemLabel(stem);
+      const label = document.createElement("span");
+      label.className = "dkaraoke-stem-label";
+      label.textContent = stemLabel(stem);
+      toggle.appendChild(label);
       toggle.disabled = true;
       toggle.addEventListener("click", () => toggleStem(stem));
       instruments.appendChild(toggle);
@@ -100,7 +103,14 @@ function mountKaraokeMenu() {
     const lyricsLabel = document.createElement("label");
     lyricsLabel.htmlFor = LYRICS_TEXT_ID;
     lyricsLabel.textContent = t("lyricsUpper");
-    lyricsHeading.append(lyricsLabel);
+    const lyricsIndicator = document.createElement("span");
+    lyricsIndicator.id = LYRICS_INDICATOR_ID;
+    lyricsIndicator.className = "dkaraoke-lyrics-indicator";
+    lyricsIndicator.dataset.state = "idle";
+    lyricsIndicator.textContent = "Waiting...";
+    lyricsIndicator.setAttribute("role", "status");
+    lyricsIndicator.setAttribute("aria-live", "polite");
+    lyricsHeading.append(lyricsLabel, lyricsIndicator);
 
     const searchButton = document.createElement("button");
     searchButton.id = LRCLIB_SEARCH_ID;
@@ -119,18 +129,12 @@ function mountKaraokeMenu() {
     lyricsTextarea.value = lyricsText;
     lyricsTextarea.addEventListener("input", () => {
       lyricsText = lyricsTextarea.value;
-      updateLyricsWatermark();
+      updateLyricsIndicator();
       updateLyricsProcessButtons();
     });
     const lyricsTextWrap = document.createElement("div");
     lyricsTextWrap.className = "dkaraoke-lyrics-text-wrap";
-    const lyricsWatermark = document.createElement("div");
-    lyricsWatermark.id = LYRICS_WATERMARK_ID;
-    lyricsWatermark.className = "dkaraoke-lyrics-watermark";
-    lyricsWatermark.dataset.state = "idle";
-    lyricsWatermark.textContent = "Waiting...";
-    lyricsWatermark.setAttribute("aria-hidden", "true");
-    lyricsTextWrap.append(lyricsTextarea, lyricsWatermark);
+    lyricsTextWrap.append(lyricsTextarea);
     const lyricsEditorBody = document.createElement("div");
     lyricsEditorBody.id = LYRICS_EDITOR_BODY_ID;
     lyricsEditorBody.className = "dkaraoke-lyrics-editor-body";
@@ -238,7 +242,7 @@ function updateWorkspaceLayout() {
 
 function applyState() {
   document.documentElement.classList.toggle(ROOT_CLASS, enabled);
-  if (!enabled) document.documentElement.classList.remove(BACKGROUND_OK_CLASS);
+  updateBackgroundReadiness();
 
   const button = document.getElementById(BUTTON_ID);
   if (button) {
@@ -280,7 +284,8 @@ function refreshLocalizedUI() {
   if (instruments) instruments.setAttribute("aria-label", t("separatedTracksAria"));
   for (const stem of STEMS) {
     const button = document.getElementById(`dkaraoke-${stem}`);
-    if (button) button.textContent = stemLabel(stem);
+    const label = button?.querySelector(".dkaraoke-stem-label");
+    if (label) label.textContent = stemLabel(stem);
   }
 
   const lyricsLabel = document.querySelector(`label[for="${LYRICS_TEXT_ID}"]`);

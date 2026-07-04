@@ -9,7 +9,7 @@ const MONITOR_ID = "dkaraoke-monitor";
 const MONITOR_TEXT_ID = "dkaraoke-monitor-text";
 const LYRICS_ID = "dkaraoke-lyrics";
 const LYRICS_TEXT_ID = "dkaraoke-lyrics-text";
-const LYRICS_WATERMARK_ID = "dkaraoke-lyrics-watermark";
+const LYRICS_INDICATOR_ID = "dkaraoke-lyrics-indicator";
 const LYRICS_EDITOR_BODY_ID = "dkaraoke-lyrics-editor-body";
 const LYRICS_FILE_BAR_ID = "dkaraoke-lyrics-file-bar";
 const LYRICS_SAVE_ID = "dkaraoke-save-lyrics";
@@ -140,6 +140,10 @@ const debugProcessJobs = new Map();
 const debugCurrentPhaseByJob = new Map();
 let finishedJobIds = new Set();
 const monitorActivities = new Map();
+
+function updateBackgroundReadiness() {
+  document.documentElement.classList.toggle(BACKGROUND_OK_CLASS, customAudioReady);
+}
 
 const I18N = {
   en: {

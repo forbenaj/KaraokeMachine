@@ -89,7 +89,12 @@ function applyQueueForCurrentVideo() {
   karaokizeAvailable = false;
   setProcessing(true);
   setProcessStatus(summarizeQueueItem(job), "busy", job.progress);
-  setMonitorActivity(job.jobId, "audio", job.status === "queued" ? t("monitorQueued") : t("processing"));
+  setMonitorActivity(
+    job.jobId,
+    "audio",
+    job.status === "queued" ? t("monitorQueued") : t("processing"),
+    job.progress,
+  );
 }
 
 function renderQueueRow(item) {

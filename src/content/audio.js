@@ -3,6 +3,7 @@ function isAdPlaying() {
 }
 
 function updateStemButtons() {
+  updateBackgroundReadiness();
   for (const stem of STEMS) {
     const button = document.getElementById(`dkaraoke-${stem}`);
     if (!button) continue;
@@ -318,6 +319,7 @@ function prepareCustomAudio(urls, readyMessage = t("separatedAudioReadySync")) {
       if (ready.size !== STEMS.length) return;
       customAudioReady = true;
       playBlocked = false;
+      updateBackgroundReadiness();
       setDebugJobProcess(debugJobId, "audioLoad", false, {
         message: t("separatedAudioLoadedPage"),
       });
@@ -363,6 +365,7 @@ function prepareCustomAudio(urls, readyMessage = t("separatedAudioReadySync")) {
     audio.addEventListener("error", () => {
       if (customAudio[stem] !== audio) return;
       customAudioReady = false;
+      updateBackgroundReadiness();
       recordDiagnostic("error", "custom_audio_load_failed", t("stemTrackFailedLoad", { stem: stemLabel(stem) }), {
         stem,
         errorCode: audio.error?.code ?? "",
