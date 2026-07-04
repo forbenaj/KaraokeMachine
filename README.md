@@ -9,6 +9,8 @@ Karaokizes _any_ existing song, by removing the Vocals and displaying the lyrics
 
 Karaoke Machine! is a Windows-first Chrome MV3 extension with a local Python backend. It adds instrumental/vocal playback and timed lyrics to YouTube while keeping YouTube's video as the master clock.
 
+![alt text](ss.png)
+
 ## Install
 
 `install.ps1` creates `.venv-tools`, installs or updates `yt-dlp` with its YouTube JavaScript solver, validates Node.js and FFmpeg, and registers the native host for the extension. Missing Node.js or FFmpeg dependencies are installed with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
@@ -224,3 +226,17 @@ Run the following to unregister the native host:
 ```
 
 Then remove the unpacked extension from Chrome. Uninstalling does not delete the runtime folders or cached songs; remove those manually if they are no longer needed.
+
+## Future
+
+This is still a beta. I uploaded the project as soon as I had something working reasonably fine, so there are a lot of things to improve, but also a lot of things that straight up don't work correctly.
+
+Some known issues:
+
+- **CTC Forced Alignment** is _not_ perfect, and it will often produce wrong timings or fail entirely if the song is too long. Even beefier state-of-the-art methods will often do whatever they want. CTC is a good middle ground (better than VAD, which is also implemented). We will need a **lyrics editor** so any bad timing can be corrected.
+
+- **Audio separation** has been less of an issue, but any model will have the drawback of being _too slow_. I imagine a model that can stream the audio as it's being extracted, which I don't even know if is possible. Something like that would work wonders, making it possible to have the video ready almost immediately.
+
+- **Lyrics search** is a scoring mess and has **not** been thoroughly tested.
+
+I'll keep updating this list as I find the time.
