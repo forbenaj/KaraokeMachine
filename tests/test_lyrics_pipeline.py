@@ -60,6 +60,35 @@ class LyricsMetadataTests(unittest.TestCase):
         self.assertEqual(metadata["artist"], "A-ha")
         self.assertEqual(metadata["duration"], 225.0)
 
+    def test_removes_promotional_bracket_suffix_with_extra_words(self):
+        metadata = host.song_metadata_from_title(
+            "Michael Jackson - Don't Stop 'Til You Get Enough (Official Video - Upscaled)",
+            253,
+        )
+
+        self.assertEqual(metadata["title"], "Don't Stop 'Til You Get Enough")
+        self.assertEqual(metadata["artist"], "Michael Jackson")
+        self.assertEqual(metadata["duration"], 253.0)
+
+    def test_removes_live_bracket_and_trailing_year_suffix(self):
+        metadata = host.song_metadata_from_title(
+            "Michael Jackson - Billie Jean (Live) - 1983",
+            299,
+        )
+
+        self.assertEqual(metadata["title"], "Billie Jean")
+        self.assertEqual(metadata["artist"], "Michael Jackson")
+        self.assertEqual(metadata["duration"], 299.0)
+
+    def test_preserves_non_noise_parenthetical_title_text(self):
+        metadata = host.song_metadata_from_title(
+            "Eurythmics - Sweet Dreams (Are Made of This)",
+            216,
+        )
+
+        self.assertEqual(metadata["title"], "Sweet Dreams (Are Made of This)")
+        self.assertEqual(metadata["artist"], "Eurythmics")
+
 
 class YoutubeHelperTests(unittest.TestCase):
     def test_http_403_download_error_can_retry_with_cookies(self):
@@ -156,6 +185,36 @@ class LrcParsingTests(unittest.TestCase):
         self.assertEqual(variants[0]["artist"], "Michael Jackson")
         self.assertEqual(queries[0], {
             "track_name": "Chicago",
+            "artist_name": "Michael Jackson",
+        })
+
+    def test_lrclib_query_strips_official_video_upscaled_suffix(self):
+        variants = host.lyrics.lrclib_metadata_variants({
+            "title": "Michael Jackson - Don't Stop 'Til You Get Enough (Official Video - Upscaled)",
+            "artist": "",
+            "duration": 253,
+        })
+        queries = host.lyrics.lrclib_search_queries(variants)
+
+        self.assertEqual(variants[0]["title"], "Don't Stop 'Til You Get Enough")
+        self.assertEqual(variants[0]["artist"], "Michael Jackson")
+        self.assertEqual(queries[0], {
+            "track_name": "Don't Stop 'Til You Get Enough",
+            "artist_name": "Michael Jackson",
+        })
+
+    def test_lrclib_query_strips_live_year_suffix(self):
+        variants = host.lyrics.lrclib_metadata_variants({
+            "title": "Michael Jackson - Billie Jean (Live) - 1983",
+            "artist": "",
+            "duration": 299,
+        })
+        queries = host.lyrics.lrclib_search_queries(variants)
+
+        self.assertEqual(variants[0]["title"], "Billie Jean")
+        self.assertEqual(variants[0]["artist"], "Michael Jackson")
+        self.assertEqual(queries[0], {
+            "track_name": "Billie Jean",
             "artist_name": "Michael Jackson",
         })
 

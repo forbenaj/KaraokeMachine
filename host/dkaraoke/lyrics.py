@@ -64,6 +64,7 @@ APOSTROPHE_TRANSLATION = str.maketrans({
     "`": "'",
 })
 TITLE_SEPARATOR_RE = re.compile(r"\s+(?:-|:|\|)\s+")
+TRAILING_YEAR_SUFFIX_RE = re.compile(r"\s+(?:-|:|\|)\s*(?:19|20)\d{2}\s*$")
 BRACKETED_NOISE_RE = re.compile(
     r"\s*(?:\(|\[|\{)(?:"
     r"(?:official\s+)?(?:music\s+)?video|"
@@ -77,8 +78,26 @@ BRACKETED_NOISE_RE = re.compile(
     r")(?:\)|\]|\})\s*",
     re.IGNORECASE,
 )
+BRACKETED_CHUNK_RE = re.compile(r"\s*(?:\([^)]*\)|\[[^\]]*\]|\{[^}]*\})\s*")
+BRACKETED_PROMO_NOISE_RE = re.compile(
+    r"\b(?:"
+    r"official|"
+    r"music\s+video|"
+    r"video|"
+    r"official\s+audio|"
+    r"lyrics?|"
+    r"lyric\s+video|"
+    r"visuali[sz]er|"
+    r"audio|"
+    r"hd|4k|"
+    r"mv|"
+    r"live|"
+    r"upscaled"
+    r")\b",
+    re.IGNORECASE,
+)
 INLINE_NOISE_RE = re.compile(
-    r"\b(?:official|music\s+video|lyric\s+video|visuali[sz]er|official\s+audio|hd|4k|mv)\b",
+    r"\b(?:official|music\s+video|lyric\s+video|visuali[sz]er|official\s+audio|upscaled|hd|4k|mv)\b",
     re.IGNORECASE,
 )
 FEATURE_RE = re.compile(
@@ -124,6 +143,11 @@ def normalize_metadata_separators(text):
 def clean_metadata_text(text):
     text = normalize_metadata_separators(text)
     text = BRACKETED_NOISE_RE.sub(" ", text)
+    text = BRACKETED_CHUNK_RE.sub(
+        lambda match: " " if BRACKETED_PROMO_NOISE_RE.search(match.group(0)) else match.group(0),
+        text,
+    )
+    text = TRAILING_YEAR_SUFFIX_RE.sub(" ", text)
     return " ".join(text.split()).strip(" -|")
 
 
