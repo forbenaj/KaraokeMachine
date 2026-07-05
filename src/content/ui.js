@@ -1,3 +1,11 @@
+function renderMenuHeader(header) {
+  const title = document.createElement("strong");
+  title.textContent = t("studioTitle");
+  const subtitle = document.createElement("span");
+  subtitle.textContent = t("audioPreparation");
+  header.replaceChildren(title, subtitle);
+}
+
 function mountKaraokeMenu() {
   const columns = document.querySelector("ytd-watch-flexy #columns");
   const primary = columns?.querySelector(":scope > #primary");
@@ -31,9 +39,9 @@ function mountKaraokeMenu() {
     const star = document.createElement("div");
     star.className = "dkaraoke-monitor-star";
     star.setAttribute("aria-hidden", "true");
-    star.style.setProperty("--dk-star-image", `url("${chrome.runtime.getURL("star.svg")}")`);
-    star.style.setProperty("--dk-jagged-star-image", `url("${chrome.runtime.getURL("jagged_star.svg")}")`);
-    star.style.setProperty("--dk-lines-image", `url("${chrome.runtime.getURL("lines.svg")}")`);
+    star.style.setProperty("--dk-star-image", `url("${chrome.runtime.getURL("assets/extension/star.svg")}")`);
+    star.style.setProperty("--dk-jagged-star-image", `url("${chrome.runtime.getURL("assets/extension/jagged_star.svg")}")`);
+    star.style.setProperty("--dk-lines-image", `url("${chrome.runtime.getURL("assets/extension/lines.svg")}")`);
     const display = document.createElement("button");
     display.id = MONITOR_ID;
     display.type = "button";
@@ -77,7 +85,7 @@ function mountKaraokeMenu() {
 
     const header = document.createElement("div");
     header.className = "dkaraoke-menu-header";
-    header.innerHTML = `<strong>${t("studioTitle")}</strong><span>${t("audioPreparation")}</span>`;
+    renderMenuHeader(header);
 
     const instruments = document.createElement("div");
     instruments.className = "dkaraoke-instruments";
@@ -279,7 +287,7 @@ function refreshLocalizedUI() {
   const menu = document.getElementById(MENU_ID);
   if (menu) menu.setAttribute("aria-label", t("controlsSectionAria"));
   const header = menu?.querySelector(".dkaraoke-menu-header");
-  if (header) header.innerHTML = `<strong>${t("studioTitle")}</strong><span>${t("audioPreparation")}</span>`;
+  if (header) renderMenuHeader(header);
   const instruments = menu?.querySelector(".dkaraoke-instruments");
   if (instruments) instruments.setAttribute("aria-label", t("separatedTracksAria"));
   for (const stem of STEMS) {

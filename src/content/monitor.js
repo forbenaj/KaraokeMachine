@@ -127,6 +127,7 @@ function clearMonitorJob(jobId) {
 }
 
 function updateMonitorFromBackend(message) {
+  if (!isCurrentVideoMessage(message)) return false;
   const phase = message.phase || "";
   if (["lyrics", "lyricsLookup"].includes(phase)) {
     if (message.status !== "monitorEnd" && message.message) {

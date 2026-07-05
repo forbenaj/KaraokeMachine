@@ -169,8 +169,8 @@ body.dkaraoke-landing .monitor-frame::before {
   );
   transform: translate(-50%, -50%) rotate(0turn);
   transform-origin: center;
-  mask: url("../star.svg") center / contain no-repeat;
-  -webkit-mask: url("../star.svg") center / contain no-repeat;
+  mask: url("../assets/extension/star.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/extension/star.svg") center / contain no-repeat;
   animation: dkaraoke-landing-monitor-spin 28s linear infinite;
   will-change: transform;
 }

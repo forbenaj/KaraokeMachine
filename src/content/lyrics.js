@@ -386,7 +386,7 @@ function updateLyricFiles(files, activeFileId = activeLyricsFileId) {
 function renderLyricFileBar() {
   const bar = document.getElementById(LYRICS_FILE_BAR_ID);
   if (!bar) return;
-  const fileIconUrl = chrome.runtime.getURL("file.svg");
+  const fileIconUrl = chrome.runtime.getURL("assets/extension/file.svg");
   const buttons = lyricFiles.map((file) => {
     const button = document.createElement("button");
     button.type = "button";

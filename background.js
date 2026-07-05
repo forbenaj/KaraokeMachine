@@ -15,7 +15,7 @@ const TIMING_METHODS = new Set([DEFAULT_TIMING_METHOD, "silero-vad"]);
 const DEFAULT_TIMING_SOURCE = "original";
 const TIMING_SOURCES = new Set([DEFAULT_TIMING_SOURCE, "vocal-stem"]);
 const DEFAULT_TIMING_SCHEDULE = "lyrics-first";
-const TIMING_SCHEDULES = new Set([DEFAULT_TIMING_SCHEDULE, "lyrics-first", "parallel"]);
+const TIMING_SCHEDULES = new Set(["stems-first", DEFAULT_TIMING_SCHEDULE, "parallel"]);
 const jobTimeouts = new Map();
 const JOB_TIMEOUT_MS = {
   cache: 2 * 60 * 1000,
@@ -302,7 +302,9 @@ function failAllJobs(message) {
       type: "dkaraoke-status",
       jobId,
       status: "error",
-      message
+      message,
+      videoId: job.videoId || "",
+      phase: job.phase || "",
     });
   }
   for (const jobId of jobTimeouts.keys()) clearJobTimeout(jobId);
@@ -327,7 +329,9 @@ function failJob(jobId, message) {
     type: "dkaraoke-status",
     jobId,
     status: "error",
-    message
+    message,
+    videoId: job.videoId || "",
+    phase: job.phase || "",
   });
   clearJobTimeout(jobId);
   jobs.delete(jobId);
@@ -545,7 +549,9 @@ function postDownloadToHost(job) {
       type: "dkaraoke-status",
       jobId: job.jobId,
       status: "error",
-      message: String(error)
+      message: String(error),
+      videoId: job.videoId || "",
+      phase: "connect",
     });
     jobs.delete(job.jobId);
     clearJobTimeout(job.jobId);
@@ -586,7 +592,9 @@ function postDownloadToHost(job) {
         type: "dkaraoke-status",
         jobId: job.jobId,
         status: "error",
-        message: String(error)
+        message: String(error),
+        videoId: job.videoId || "",
+        phase: "connect",
       });
       jobs.delete(job.jobId);
       clearJobTimeout(job.jobId);
@@ -639,7 +647,12 @@ function checkCache(message, tabId, sendResponse) {
     sendResponse({ ok: false, error: String(error) });
     return;
   }
-  jobs.set(message.jobId, { tabId, kind: "cache" });
+  jobs.set(message.jobId, {
+    tabId,
+    kind: "cache",
+    videoId: videoIdFromUrl(message.url),
+    phase: "cache",
+  });
   armJobTimeout(message.jobId, "cache");
   try {
     port.postMessage({
@@ -744,6 +757,7 @@ function karaokize(message, tabId, sendResponse) {
       kind: "lyricsTimings",
       videoId: job.videoId,
       parentJobId: job.jobId,
+      phase: "lyrics",
     });
     armJobTimeout(lyricsTiming.jobId, "lyricsTimings");
   }
@@ -778,7 +792,12 @@ function searchLrclib(message, tabId, sendResponse) {
     sendResponse({ ok: false, error: String(error) });
     return;
   }
-  jobs.set(message.jobId, { tabId, kind: "lyricsSearch" });
+  jobs.set(message.jobId, {
+    tabId,
+    kind: "lyricsSearch",
+    videoId: videoIdFromUrl(message.url),
+    phase: "lyricsLookup",
+  });
   armJobTimeout(message.jobId, "lyricsSearch");
   try {
     port.postMessage({
@@ -824,7 +843,12 @@ function extractLyricsTimings(message, tabId, sendResponse) {
   }
   const videoId = videoIdFromUrl(message.url);
   const timingSource = normalizeTimingSource(message.timingSource);
-  jobs.set(message.jobId, { tabId, kind: "lyricsTimings", videoId });
+  jobs.set(message.jobId, {
+    tabId,
+    kind: "lyricsTimings",
+    videoId,
+    phase: "lyrics",
+  });
   armJobTimeout(message.jobId, "lyricsTimings");
   const hostMessage = {
     action: "extractLyricsTimings",
@@ -885,7 +909,12 @@ function lyricsFileAction(message, tabId, sendResponse) {
     "dkaraoke-create-lyric-file": "createLyricFile",
   };
   const action = actionByType[message.type];
-  jobs.set(message.jobId, { tabId, kind: "lyricsFile", videoId: videoIdFromUrl(message.url) });
+  jobs.set(message.jobId, {
+    tabId,
+    kind: "lyricsFile",
+    videoId: videoIdFromUrl(message.url),
+    phase: "lyricsFile",
+  });
   armJobTimeout(message.jobId, "cache");
   try {
     port.postMessage({

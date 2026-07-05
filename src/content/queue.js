@@ -78,7 +78,15 @@ function applyQueueForCurrentVideo() {
     item.videoId
     && item.videoId === videoId
   );
-  if (!job) return;
+  if (!job) {
+    if (activeJobId && queueItems.some((item) => item.jobId === activeJobId)) {
+      activeJobId = null;
+      activeJobStemsReady = false;
+      setProcessing(false);
+      updatePlaybackMonitor();
+    }
+    return;
+  }
   setDebugJobProcess(job.jobId, "queue", job.status === "queued", {
     silent: true,
   });

@@ -79,7 +79,7 @@ def build_svg(
 
 
 def create_jagged_star_svg(
-    output_file="jagged_star_50.svg",
+    output_file="assets/extension/jagged_star.svg",
     size=300,
     points=50,
     outer_radius=140,
@@ -109,13 +109,15 @@ def create_jagged_star_svg(
     path_d = points_to_svg_path(vertices)
     svg = build_svg(path_d, width=size, height=size, fill=fill)
 
-    Path(output_file).write_text(svg, encoding="utf-8")
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(svg, encoding="utf-8")
     return svg
 
 
 if __name__ == "__main__":
     svg_code = create_jagged_star_svg(
-        output_file="jagged_star_50.svg",
+        output_file="assets/extension/jagged_star.svg",
         size=300,
         points=30,
         outer_radius=140,
@@ -124,6 +126,6 @@ if __name__ == "__main__":
         rotation_deg=-90,
     )
 
-    print("SVG created: jagged_star_50.svg")
+    print("SVG created: assets/extension/jagged_star.svg")
     print()
     print(svg_code)

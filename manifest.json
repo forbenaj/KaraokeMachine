@@ -43,7 +43,12 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["star.svg", "jagged_star.svg", "lines.svg", "file.svg"],
+      "resources": [
+        "assets/extension/star.svg",
+        "assets/extension/jagged_star.svg",
+        "assets/extension/lines.svg",
+        "assets/extension/file.svg"
+      ],
       "matches": ["https://www.youtube.com/*"]
     }
   ]

@@ -784,6 +784,10 @@ function currentVideoId() {
   return new URL(location.href).searchParams.get("v") || "";
 }
 
+function isCurrentVideoMessage(message) {
+  return !message?.videoId || message.videoId === currentVideoId();
+}
+
 function currentSongTitle() {
   return document.querySelector("ytd-watch-metadata h1")?.textContent?.trim()
     || document.title.replace(/\s*-\s*YouTube\s*$/, "").trim();
