@@ -34,6 +34,37 @@ Then load the extension:
 
 Chrome loads the extension directly from this directory. After changing extension files, use **Reload** on `chrome://extensions` and refresh YouTube. The fixed manifest key keeps the unpacked extension ID consistent with the registered native host.
 
+## Installer build
+
+The Windows setup wizard is built with [Inno Setup 6](https://jrsoftware.org/isinfo.php). It copies the extension and native host files to:
+
+```text
+%LOCALAPPDATA%\Programs\DKaraoKe
+```
+
+Then it runs `scripts\setup-wizard.ps1`, which writes `%LOCALAPPDATA%\DKaraoKe\config.json`, runs `install.ps1`, and optionally runs `setup-roformer.ps1`.
+
+Build prerequisites:
+
+- Inno Setup 6
+- PowerShell
+- Python 3.10+
+- `winget` recommended for installing Node.js and FFmpeg when missing
+
+Build the installer from the repo root:
+
+```powershell
+ISCC.exe installer\installer.iss
+```
+
+The output installer is:
+
+```text
+installer\Output\DKaraoKeSetup.exe
+```
+
+Chrome extension loading is still manual because Chrome does not allow a normal local installer to silently load an unpacked extension. After setup, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select the installed DKaraoKe folder.
+
 ## Hardware and processing expectations
 
 Karaoke Machine! can run on CPU, but audio separation and local lyric timing are machine-learning workloads. A CUDA-capable NVIDIA GPU is strongly recommended for regular use.
@@ -124,6 +155,14 @@ Each video is stored separately under:
 ```text
 %LOCALAPPDATA%\DKaraoKe\downloads\<video-id>\
 ```
+
+The setup wizard can choose a different stems/downloads folder. That choice is saved in:
+
+```text
+%LOCALAPPDATA%\DKaraoKe\config.json
+```
+
+If the config file is missing or invalid, DKaraoKe falls back to `%LOCALAPPDATA%\DKaraoKe\downloads`.
 
 Important cached files include:
 
@@ -238,5 +277,11 @@ Some known issues:
 - **Audio separation** has been less of an issue, but any model will have the drawback of being _too slow_. I imagine a model that can stream the audio as it's being extracted, which I don't even know if is possible. Something like that would work wonders, making it possible to have the video ready almost immediately.
 
 - **Lyrics search** is a scoring mess and has **not** been thoroughly tested.
+
+**Bugs**:
+Not responsive yet. Small screens show the karaoke sections below the comments and below one another, so they're big as hell and actually not reachable. To fix the it, place them horizontally below the above-the-fold section.
+Bar still loading after everything is done.
+The monitor should only show the status for the *current open song* if there is any.
+
 
 I'll keep updating this list as I find the time.
