@@ -37,6 +37,12 @@
     : null;
 
     const buttons = document.querySelectorAll("[data-toggle]");
+    const landingRoot = document.body;
+    const topbar = document.querySelector(".topbar");
+    const hero = document.querySelector("[data-landing-hero]");
+    const heroBrand = document.querySelector("[data-hero-brand]");
+    const topbarBrand = document.querySelector(".topbar .brand");
+    const monitorFrame = document.querySelector(".monitor-frame");
     const lyricsOverlay = document.getElementById("dkaraoke-lyrics-overlay");
     const silenceCurtain = document.getElementById("silence-curtain");
     const styleSelect = document.getElementById("lyric-style");
@@ -47,9 +53,60 @@
     instrumental: new Audio(DEMO.instrumentalUrl),
     vocals: new Audio(DEMO.vocalsUrl)
     };
+    let landingScrollFrame = null;
 
     for (const audio of Object.values(stemAudio)) {
     audio.preload = "auto";
+    }
+
+    function clamp(value, min = 0, max = 1) {
+    return Math.max(min, Math.min(max, value));
+    }
+
+    function setLandingBrandTransform(x = 0, y = 0, scale = 1, opacity = 1, topbarProgress = 0) {
+    if (!landingRoot) return;
+    landingRoot.style.setProperty("--landing-brand-x", `${x}px`);
+    landingRoot.style.setProperty("--landing-brand-y", `${y}px`);
+    landingRoot.style.setProperty("--landing-brand-scale", String(scale));
+    landingRoot.style.setProperty("--landing-hero-opacity", String(opacity));
+    landingRoot.style.setProperty("--landing-topbar-progress", String(topbarProgress));
+    }
+
+    function updateLandingMonitorStar() {
+    if (!landingRoot || !monitorFrame) return;
+    const rect = monitorFrame.getBoundingClientRect();
+    landingRoot.style.setProperty("--landing-monitor-star-x", `${rect.left + rect.width / 2}px`);
+    landingRoot.style.setProperty("--landing-monitor-star-y", `${rect.top + rect.height / 2}px`);
+    }
+
+    function updateLandingHeader() {
+    landingScrollFrame = null;
+    updateLandingMonitorStar();
+    if (!topbar || !hero || !heroBrand || !topbarBrand) return;
+
+    const heroHeight = Math.max(1, hero.offsetHeight);
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const brandProgress = clamp(scrollY / Math.max(1, heroHeight * 0.74));
+    const topbarProgress = clamp((scrollY - heroHeight * 0.34) / Math.max(1, heroHeight * 0.2));
+
+    setLandingBrandTransform(0, 0, 1, 1, topbarProgress);
+    const heroRect = heroBrand.getBoundingClientRect();
+    const topbarRect = topbarBrand.getBoundingClientRect();
+    const targetScale = heroRect.width > 0 ? clamp(topbarRect.width / heroRect.width, 0.16, 1) : 1;
+    const x = (topbarRect.left - heroRect.left) * brandProgress;
+    const y = (topbarRect.top - heroRect.top) * brandProgress;
+    const scale = 1 + (targetScale - 1) * brandProgress;
+    const heroOpacity = 1 - clamp((brandProgress - 0.68) / 0.24);
+
+    setLandingBrandTransform(x, y, scale, heroOpacity, topbarProgress);
+    const topbarVisible = topbarProgress > 0.02;
+    topbar.classList.toggle("is-visible", topbarVisible);
+    topbar.setAttribute("aria-hidden", String(!topbarVisible));
+    }
+
+    function queueLandingHeaderUpdate() {
+    if (landingScrollFrame !== null) return;
+    landingScrollFrame = window.requestAnimationFrame(updateLandingHeader);
     }
 
     function selectedStemCount() {
@@ -542,6 +599,9 @@
     loadLyrics();
     renderLyricFrame();
     renderState();
+    updateLandingHeader();
+    window.addEventListener("scroll", queueLandingHeaderUpdate, { passive: true });
+    window.addEventListener("resize", queueLandingHeaderUpdate);
     loadYouTubeApi();
 
     window.addEventListener("pagehide", () => {

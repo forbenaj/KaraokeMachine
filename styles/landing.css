@@ -4,7 +4,8 @@
 
 html.dkaraoke-landing-page,
 html.dkaraoke-landing-page body {
-  overflow-x: hidden;
+  overflow-x: clip;
+  overflow-y: visible;
 }
 
 body.dkaraoke-landing * {
@@ -12,6 +13,13 @@ body.dkaraoke-landing * {
 }
 
 body.dkaraoke-landing {
+  --landing-brand-x: 0px;
+  --landing-brand-y: 0px;
+  --landing-brand-scale: 1;
+  --landing-hero-opacity: 1;
+  --landing-topbar-progress: 0;
+  --landing-monitor-star-x: 12vw;
+  --landing-monitor-star-y: 50vh;
   min-width: 320px;
   margin: 0;
   color: var(--dk-ink);
@@ -38,18 +46,35 @@ body.dkaraoke-landing .page-shell {
 }
 
 body.dkaraoke-landing .topbar {
-  position: sticky;
+  position: fixed;
   z-index: 20;
   top: 0;
+  right: 0;
+  left: 0;
   display: flex;
   min-height: 74px;
   align-items: center;
   justify-content: space-between;
   gap: 20px;
   padding: 14px 24px 10px;
-  background: transparent;
+  background: color-mix(in srgb, var(--dk-paper) 88%, transparent);
   border-bottom: 3px solid rgba(26, 26, 26, 0.7);
   box-shadow: 0 4px 0 rgba(26, 26, 26, 0.18);
+  opacity: var(--landing-topbar-progress);
+  pointer-events: none;
+  transform: translateY(-14px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    visibility 180ms ease;
+  visibility: hidden;
+  backdrop-filter: blur(5px);
+}
+
+body.dkaraoke-landing .topbar.is-visible {
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
 }
 
 body.dkaraoke-landing .brand {
@@ -131,7 +156,75 @@ body.dkaraoke-landing .top-actions a:hover {
   box-shadow: 5px 5px 0 var(--dk-ink);
 }
 
+body.dkaraoke-landing .landing-hero {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  min-height: min(70svh, 700px);
+  place-items: center;
+  gap: clamp(14px, 3vh, 24px);
+  padding: clamp(42px, 7vh, 76px) 24px clamp(28px, 5vh, 54px);
+  text-align: center;
+}
+
+body.dkaraoke-landing .hero-brand {
+  display: flex;
+  position: relative;
+  z-index: 2;
+  max-width: min(1040px, calc(100vw - 32px));
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(16px, 3vh, 28px);
+  color: inherit;
+  opacity: var(--landing-hero-opacity);
+  text-decoration: none;
+  transform: translate3d(var(--landing-brand-x), var(--landing-brand-y), 0) scale(var(--landing-brand-scale));
+  transform-origin: top left;
+  will-change: transform, opacity;
+}
+
+body.dkaraoke-landing .hero-brand img {
+  width: clamp(84px, 12vw, 146px);
+  height: clamp(84px, 12vw, 146px);
+  border: var(--dk-border-lg);
+  background: color-mix(in srgb, var(--dk-paper) 82%, transparent);
+  box-shadow: var(--dk-panel-shadow);
+  object-fit: contain;
+}
+
+body.dkaraoke-landing .hero-brand-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(8px, 1.4vh, 14px);
+}
+
+body.dkaraoke-landing .hero-brand-title strong {
+  color: var(--dk-magenta);
+  font: 900 clamp(48px, 10.6vw, 150px) / 0.82 var(--dk-display-font);
+  text-transform: uppercase;
+  -webkit-text-stroke: clamp(2px, 0.35vw, 6px) var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: clamp(4px, 0.8vw, 12px) clamp(4px, 0.8vw, 12px) 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .hero-brand-title .hero-brand-title-ja {
+  color: var(--dk-yellow);
+  font-size: clamp(30px, 5.7vw, 86px);
+}
+
+body.dkaraoke-landing .hero-actions {
+  display: flex;
+  position: relative;
+  z-index: 1;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  opacity: var(--landing-hero-opacity);
+}
+
 body.dkaraoke-landing .watch-layout {
+  isolation: isolate;
   display: grid;
   grid-template-columns: clamp(218px, 16vw, 296px) minmax(0, 1fr) clamp(226px, 17vw, 320px);
   gap: 24px;
@@ -149,6 +242,10 @@ body.dkaraoke-landing .right-rail {
   gap: 16px;
 }
 
+body.dkaraoke-landing .left-rail {
+  overflow: visible;
+}
+
 body.dkaraoke-landing .monitor-frame {
   position: relative;
   z-index: 0;
@@ -162,10 +259,10 @@ body.dkaraoke-landing .monitor-frame {
 
 body.dkaraoke-landing .monitor-frame::before {
   content: "";
-  position: absolute;
-  z-index: -1;
-  top: 50%;
-  left: 50%;
+  position: fixed;
+  z-index: 0;
+  top: var(--landing-monitor-star-y);
+  left: var(--landing-monitor-star-x);
   width: 180vmax;
   max-width: none;
   aspect-ratio: 1;
@@ -653,6 +750,14 @@ body.dkaraoke-landing .code-line {
   body.dkaraoke-landing .try-me-star::before {
     animation: none;
   }
+
+  body.dkaraoke-landing .topbar {
+    transition: none;
+  }
+
+  body.dkaraoke-landing .hero-brand {
+    will-change: auto;
+  }
 }
 
 @media (max-width: 1180px) {
@@ -676,10 +781,9 @@ body.dkaraoke-landing .panel {
 
 @media (max-width: 780px) {
   body.dkaraoke-landing .topbar {
-    position: static;
     flex-direction: column;
     align-items: stretch;
-    padding: 12px;
+    padding: 10px 12px 12px;
   }
 
   body.dkaraoke-landing .brand {
@@ -692,6 +796,20 @@ body.dkaraoke-landing .panel {
 
   body.dkaraoke-landing .top-actions a {
     flex: 1;
+  }
+
+  body.dkaraoke-landing .landing-hero {
+    min-height: 70svh;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  body.dkaraoke-landing .hero-brand-title strong {
+    font-size: clamp(48px, 17vw, 92px);
+  }
+
+  body.dkaraoke-landing .hero-brand-title .hero-brand-title-ja {
+    font-size: clamp(31px, 10vw, 58px);
   }
 
   body.dkaraoke-landing .watch-layout,
