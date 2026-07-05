@@ -359,6 +359,67 @@ body.dkaraoke-landing .silence-curtain[hidden] {
   display: none;
 }
 
+body.dkaraoke-landing .try-me-star {
+  position: absolute;
+  z-index: 8;
+  top: clamp(12px, 4vw, 34px);
+  left: 50%;
+  display: grid;
+  width: clamp(138px, 17vw, 242px);
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  color: var(--dk-paper);
+  background: transparent;
+  cursor: pointer;
+  transform: translateX(-50%) scale(1);
+  transform-origin: center;
+  animation: dkaraoke-try-me-pulse 1.9s ease-in-out infinite alternate;
+  filter: drop-shadow(6px 7px 0 var(--dk-ink));
+}
+
+body.dkaraoke-landing .try-me-star::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #e21b2d;
+  mask: url("../assets/extension/jagged_star.svg") center / contain no-repeat;
+  -webkit-mask: url("../assets/extension/jagged_star.svg") center / contain no-repeat;
+  animation: dkaraoke-try-me-star-spin 8s linear infinite;
+  transform-origin: center;
+  will-change: transform;
+}
+
+body.dkaraoke-landing .try-me-star span {
+  position: relative;
+  z-index: 1;
+  max-width: 68%;
+  color: var(--dk-paper);
+  font: 900 clamp(26px, 4.1vw, 58px) / 0.82 var(--dk-display-font);
+  text-align: center;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: 3px 3px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .try-me-star:hover,
+body.dkaraoke-landing .try-me-star:focus-visible {
+  animation-duration: 1.35s;
+}
+
+body.dkaraoke-landing .try-me-star:focus-visible {
+  outline: 4px solid var(--dk-yellow);
+  outline-offset: 5px;
+}
+
+body.dkaraoke-landing .try-me-star.is-playing {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 240ms ease;
+}
+
 body.dkaraoke-landing .metadata {
   margin-top: 18px;
   padding: 16px;
@@ -564,8 +625,32 @@ body.dkaraoke-landing .code-line {
   }
 }
 
+@keyframes dkaraoke-try-me-pulse {
+  from {
+    transform: translateX(-50%) scale(0.96);
+  }
+
+  to {
+    transform: translateX(-50%) scale(1.1);
+  }
+}
+
+@keyframes dkaraoke-try-me-star-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body.dkaraoke-landing .monitor-frame::before {
+    animation: none;
+  }
+
+  body.dkaraoke-landing .try-me-star {
+    animation: none;
+  }
+
+  body.dkaraoke-landing .try-me-star::before {
     animation: none;
   }
 }

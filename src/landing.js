@@ -31,6 +31,7 @@
     let lyricFrame = null;
     let renderedLyricSegment = null;
     let renderedClassicSegmentIndex = -1;
+    let pendingTryMePlay = false;
     const classicGraphemeSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
     ? new Intl.Segmenter(undefined, { granularity: "grapheme" })
     : null;
@@ -41,6 +42,7 @@
     const styleSelect = document.getElementById("lyric-style");
     const lyricsText = document.querySelector(".lyrics-body textarea");
     const lyricsName = document.querySelector(".lyrics-name input");
+    const tryMeStar = document.getElementById("try-me-star");
     const stemAudio = {
     instrumental: new Audio(DEMO.instrumentalUrl),
     vocals: new Audio(DEMO.vocalsUrl)
@@ -457,16 +459,25 @@
     silenceCurtain.hidden = sourceMode() !== "silent";
     }
 
+    function hideTryMeStar() {
+    if (!tryMeStar) return;
+    tryMeStar.classList.add("is-playing");
+    tryMeStar.disabled = true;
+    }
+
     function onPlayerReady() {
     state.playerReady = true;
     if (typeof player?.seekTo === "function") player.seekTo(DEMO_START_SECONDS, true);
     renderState();
     applyAudioMode();
+    if (Number(player?.getPlayerState?.()) === YOUTUBE_STATE.PLAYING) hideTryMeStar();
+    if (pendingTryMePlay) playDemo();
     }
 
     function onPlayerStateChange(event) {
     state.youtubeState = Number(event?.data);
     if (isPlayerPlaying()) {
+        hideTryMeStar();
         playActiveStemAudio();
     } else {
         stopSyncTimer();
@@ -477,6 +488,14 @@
 
     function onPlaybackRateChange() {
     syncStemAudio(true);
+    }
+
+    function playDemo() {
+    pendingTryMePlay = true;
+    if (!player || !state.playerReady || typeof player.playVideo !== "function") return;
+    pendingTryMePlay = false;
+    player.playVideo();
+    hideTryMeStar();
     }
 
     buttons.forEach((button) => {
@@ -497,6 +516,8 @@
     state.activeSegmentIndex = -2;
     renderState();
     });
+
+    tryMeStar?.addEventListener("click", playDemo);
 
     window.onYouTubeIframeAPIReady = () => {
     player = new YT.Player("youtube-player", {
