@@ -4,6 +4,10 @@ html.dkaraoke-landing-page body {
   overflow-y: visible;
 }
 
+html.dkaraoke-landing-page {
+  scroll-behavior: smooth;
+}
+
 body.dkaraoke-landing * {
   box-sizing: border-box;
 }
