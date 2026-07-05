@@ -208,6 +208,17 @@ body.dkaraoke-landing .hero-brand-title strong {
   text-shadow: clamp(4px, 0.8vw, 12px) clamp(4px, 0.8vw, 12px) 0 var(--dk-ink);
 }
 
+body.dkaraoke-landing .hero-brand-subtitle {
+  padding: 4px 14px;
+  border: var(--dk-border-sm);
+  background: color-mix(in srgb, var(--dk-paper) 88%, transparent);
+  box-shadow: var(--dk-small-shadow);
+  color: var(--dk-ink);
+  font: 900 clamp(14px, 2vw, 28px) / 1 var(--dk-ui-font);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
 body.dkaraoke-landing .hero-brand-title .hero-brand-title-ja {
   color: var(--dk-yellow);
   font-size: clamp(30px, 5.7vw, 86px);
