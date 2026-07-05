@@ -324,7 +324,7 @@ body.dkaraoke-landing .monitor-display {
 
 body.dkaraoke-landing .monitor-display strong {
   color: var(--dk-cyan);
-  font: 900 clamp(30px, 3vw, 52px) / 0.92 var(--dk-display-font);
+  font: 900 clamp(42px, 4.8vw, 52px) / 0.86 var(--dk-display-font);
   filter: drop-shadow(0 0 18px var(--dk-yellow));
 }
 
@@ -838,4 +838,16 @@ body.dkaraoke-landing .install-band {
   body.dkaraoke-landing .metadata h1 {
     font-size: 22px;
   }
+}
+
+body.dkaraoke-landing .version-badge {
+  display: inline-block;
+  min-width: 48px;
+  padding: 6px 12px;
+  background: var(--dk-yellow);
+  color: var(--dk-ink);
+  font: 700 11px/1 var(--dk-ui-font);
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-transform: uppercase;
 }
