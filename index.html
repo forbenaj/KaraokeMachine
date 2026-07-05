@@ -92,8 +92,12 @@
           <h1>I Recall</h1>
           <div class="meta-row">
             <div class="video-actions" aria-label="Video actions">
-              <a class="video-action" href="https://github.com/forbenaj/KaraokeMachine/archive/refs/heads/master.zip">Download</a>
-              <a class="video-action" href="https://github.com/forbenaj/KaraokeMachine#install">Install</a>
+              <a class="video-action secondary-button" href="https://github.com/forbenaj/KaraokeMachine" target="_blank">
+                <img class="action-button-img" src="assets/brand/GitHub_Invertocat_Black.svg" alt="GitHub">
+              </a>
+              <a class="video-action primary-button" href="https://github.com/forbenaj/KaraokeMachine#install" target="_blank">
+                <img class="action-button-img" src="assets/download.svg" alt="Download">
+              </a>
             </div>
           </div>
           <div class="description">
@@ -127,19 +131,38 @@
       </aside>
     </main>
 
-    <section class="install-band" aria-label="Install instructions">
-      <div class="install-card">
-        <h2>Download the extension</h2>
-        <p>Karaoke Machine! loads as an unpacked Chrome extension and talks to a local Python native host on Windows.</p>
-        <a class="download-button" href="https://github.com/forbenaj/KaraokeMachine/archive/refs/heads/master.zip">Download ZIP from GitHub</a>
-      </div>
-      <div class="install-card">
-        <h3>Install</h3>
-        <ol class="install-steps">
-          <li>Run setup <span class="code-line">.\install.ps1</span></li>
-          <li>Add RoFormer <span class="code-line">.\setup-roformer.ps1</span></li>
-          <li>Load unpacked in Chrome</li>
-        </ol>
+    <section class="getting-started-section" aria-label="Getting started">
+      <div class="getting-started-card">
+        <div class="product-overview">
+          <h2>What's this?</h2>
+          <p><strong>Karaoke Machine!</strong> is a Chrome extension that turns YouTube into your own karaoke machine.</p>
+          <p>It can <em>karaokize</em> any song by:</p>
+          <ul class="capability-list">
+            <li>Separating the vocals and instrumental into individual tracks, so you can mute or unmute either one.</li>
+            <li>Finding the best-matching lyrics online, with line-by-line timing data when available.</li>
+            <li>Extracting precise timing information directly from the song.</li>
+            <li>Displaying synchronized lyrics on top of the video.</li>
+          </ul>
+          <p>Even though it is a Chrome extension, it needs a <em>local backend</em> for the heavy work: downloading audio, separating stems, and timing lyrics.</p>
+          <div class="download-actions">
+            <a class="download-button" href="https://github.com/forbenaj/KaraokeMachine/releases/download/v0.0.1/DKaraoKeSetup-0.0.1.exe">
+              <img class="action-button-img" src="assets/download.svg" alt="">
+              Download installer
+            </a>
+          </div>
+        </div>
+        <div class="setup-panel">
+          <h3>Install</h3>
+          <ol class="setup-steps">
+            <li><b><a href="https://github.com/forbenaj/KaraokeMachine/releases/download/v0.0.1/DKaraoKeSetup-0.0.1.exe">Download</a></b> and run the Windows installer.</li>
+            <li>Open this page in your browser:<span class="code-line">chrome://extensions</span></li>
+            <li>Enable <b>Developer mode</b> and choose <b>Load unpacked</b>.</li>
+            <li>Select the DKaraoKe folder created by the installer.</li>
+            <li>Open any YouTube song and click the Press me button to karaokize it!</li>
+          </ol>
+          <br>
+          <p class="setup-note">A CUDA-capable NVIDIA GPU is recommended. CPU mode works, but stem separation and lyric timing can be slow.</p>
+        </div>
       </div>
     </section>
   </div>

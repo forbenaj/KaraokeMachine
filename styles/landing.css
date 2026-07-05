@@ -670,26 +670,25 @@ body.dkaraoke-landing .style-field select {
   text-transform: uppercase;
 }
 
-body.dkaraoke-landing .install-band {
+body.dkaraoke-landing .getting-started-section {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
-  gap: 18px;
   max-width: 1180px;
   margin: 28px auto 0;
   padding: 0 24px;
 }
 
-body.dkaraoke-landing .install-card {
+body.dkaraoke-landing .getting-started-card {
+  display: grid;
+  gap: 18px;
   padding: 18px;
   border: var(--dk-border-lg);
   background: var(--dk-paper);
   box-shadow: var(--dk-panel-shadow);
 }
 
-body.dkaraoke-landing .install-card h2,
-body.dkaraoke-landing .install-card h3 {
+body.dkaraoke-landing .getting-started-card h2,
+body.dkaraoke-landing .getting-started-card h3 {
   margin: 0 0 10px;
   color: var(--dk-magenta);
   font: 900 28px/1 var(--dk-display-font);
@@ -698,25 +697,83 @@ body.dkaraoke-landing .install-card h3 {
   text-shadow: 2px 2px 0 var(--dk-ink);
 }
 
-body.dkaraoke-landing .install-card p {
+body.dkaraoke-landing .getting-started-card p {
   margin: 0 0 14px;
   color: var(--dk-body-copy);
 }
 
-body.dkaraoke-landing .install-steps {
+body.dkaraoke-landing .getting-started-card strong {
+  color: var(--dk-ink);
+}
+
+body.dkaraoke-landing .capability-list {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  color: var(--dk-body-copy);
+}
+
+body.dkaraoke-landing .capability-list li {
+  position: relative;
+  padding-left: 20px;
+}
+
+body.dkaraoke-landing .capability-list li::before {
+  content: "";
+  position: absolute;
+  top: 0.78em;
+  left: 2px;
+  width: 7px;
+  height: 7px;
+  border: 2px solid var(--dk-ink);
+  background: var(--dk-cyan);
+  box-shadow: 1px 1px 0 var(--dk-ink);
+  transform: translateY(-50%) rotate(45deg);
+}
+
+body.dkaraoke-landing .download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+body.dkaraoke-landing .setup-panel {
+  padding: 14px;
+  border: var(--dk-border-sm);
+  background: var(--dk-note);
+  box-shadow: var(--dk-small-shadow);
+}
+
+body.dkaraoke-landing .setup-steps {
   display: grid;
   gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
-  font: 800 13px/1.35 var(--dk-ui-font);
+  font: 600 13px/1.35 var(--dk-ui-font);
   text-transform: uppercase;
 }
 
-body.dkaraoke-landing .install-steps li {
+body.dkaraoke-landing .setup-steps li {
   padding: 9px 10px;
   border: var(--dk-border-sm);
-  background: var(--dk-note);
+  background: var(--dk-paper);
+}
+
+body.dkaraoke-landing .setup-steps :is(strong, b),
+body.dkaraoke-landing .setup-steps :is(strong, b) a {
+  font-weight: 900;
+  text-shadow: 0.35px 0 0 currentColor, -0.35px 0 0 currentColor;
+}
+
+body.dkaraoke-landing .setup-steps a {
+  color: inherit;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 2px;
 }
 
 body.dkaraoke-landing .code-line {
@@ -726,6 +783,14 @@ body.dkaraoke-landing .code-line {
   font: 700 12px/1.4 Consolas, "Cascadia Mono", monospace;
   text-transform: none;
   white-space: nowrap;
+}
+
+body.dkaraoke-landing .setup-note {
+  margin: 12px 0 0;
+  padding: 10px;
+  border: var(--dk-border-sm);
+  background: #fff78d;
+  font: 700 13px/1.4 var(--dk-body-font);
 }
 
 @keyframes dkaraoke-landing-monitor-spin {
@@ -825,13 +890,12 @@ body.dkaraoke-landing .panel {
   }
 
   body.dkaraoke-landing .watch-layout,
-body.dkaraoke-landing .install-band {
+body.dkaraoke-landing .getting-started-section {
     padding: 0 12px;
   }
 
   body.dkaraoke-landing .left-rail,
-body.dkaraoke-landing .right-rail,
-body.dkaraoke-landing .install-band {
+body.dkaraoke-landing .right-rail {
     grid-template-columns: minmax(0, 1fr);
   }
 
