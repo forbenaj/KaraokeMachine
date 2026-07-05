@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import threading
@@ -11,6 +12,35 @@ ACTIVE_STEM_JOBS = set()
 STEM_READY_EVENTS = {}
 TIMING_JOB_LOCK = threading.Lock()
 TIMING_JOB_LOCKS = {}
+
+
+def _local_appdata_root():
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
+
+
+def _default_downloads_root():
+    return _local_appdata_root() / "DKaraoKe" / "downloads"
+
+
+def _configured_downloads_root():
+    config_path = _local_appdata_root() / "DKaraoKe" / "config.json"
+    try:
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        raw_path = config.get("downloadsDir")
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            return None
+        downloads_root = Path(os.path.expandvars(raw_path.strip())).expanduser()
+        downloads_root.mkdir(parents=True, exist_ok=True)
+        if not downloads_root.is_dir():
+            return None
+        return downloads_root
+    except Exception:
+        return None
+
+
+def downloads_root():
+    return _configured_downloads_root() or _default_downloads_root()
+
 
 def validate_youtube_url(raw_url):
     parsed = urlparse(raw_url)
@@ -33,8 +63,7 @@ def video_id_from_url(raw_url):
 
 
 def app_download_dir(video_id):
-    root = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share")
-    path = root / "DKaraoKe" / "downloads" / video_id
+    path = downloads_root() / video_id
     path.mkdir(parents=True, exist_ok=True)
     return path
 

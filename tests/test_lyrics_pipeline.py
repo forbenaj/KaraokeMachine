@@ -1,5 +1,6 @@
 import unittest
 import json
+import os
 import subprocess
 import tempfile
 import threading
@@ -9,7 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from host import dkaraoke_host as host
-from host.dkaraoke import diagnostics
+from host.dkaraoke import diagnostics, paths
 from host import lyrics_runner
 
 
@@ -115,6 +116,38 @@ class YoutubeHelperTests(unittest.TestCase):
         finally:
             if path:
                 Path(path).unlink(missing_ok=True)
+
+
+class PathsConfigTests(unittest.TestCase):
+    def test_app_download_dir_uses_configured_downloads_dir(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            local_appdata = root / "local"
+            downloads = root / "custom-downloads"
+            config_dir = local_appdata / "DKaraoKe"
+            config_dir.mkdir(parents=True)
+            (config_dir / "config.json").write_text(json.dumps({
+                "downloadsDir": str(downloads),
+            }), encoding="utf-8")
+
+            with patch.dict(os.environ, {"LOCALAPPDATA": str(local_appdata)}):
+                result = paths.app_download_dir("abcdefghijk")
+
+            self.assertEqual(result, downloads / "abcdefghijk")
+            self.assertTrue(result.exists())
+
+    def test_app_download_dir_falls_back_when_config_is_invalid(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            local_appdata = Path(temporary) / "local"
+            config_dir = local_appdata / "DKaraoKe"
+            config_dir.mkdir(parents=True)
+            (config_dir / "config.json").write_text("{not json", encoding="utf-8")
+
+            with patch.dict(os.environ, {"LOCALAPPDATA": str(local_appdata)}):
+                result = paths.app_download_dir("abcdefghijk")
+
+            self.assertEqual(result, local_appdata / "DKaraoKe" / "downloads" / "abcdefghijk")
+            self.assertTrue(result.exists())
 
 
 class LrcParsingTests(unittest.TestCase):
