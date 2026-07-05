@@ -56,7 +56,6 @@ body.dkaraoke-landing .brand {
   display: flex;
   min-width: 0;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
   padding: 2px 0;
   text-decoration: none;
@@ -72,6 +71,13 @@ body.dkaraoke-landing .brand img {
   object-fit: contain;
 }
 
+body.dkaraoke-landing .brand-title {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
 body.dkaraoke-landing .brand strong {
   min-width: 0;
   color: var(--dk-magenta);
@@ -80,6 +86,10 @@ body.dkaraoke-landing .brand strong {
   -webkit-text-stroke: 1px var(--dk-ink);
   paint-order: stroke fill;
   text-shadow: 2px 2px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .brand .brand-title-ja {
+  color: var(--dk-yellow);
 }
 
 body.dkaraoke-landing .download-button,
@@ -294,6 +304,18 @@ body.dkaraoke-landing .lyrics-toggle[aria-pressed="true"]::after {
   background:
     radial-gradient(circle at 75% 50%, var(--dk-paper) 0 7px, transparent 8px),
     var(--toggle-color, var(--dk-magenta));
+}
+
+body.dkaraoke-landing .stem-toggle-instrumental {
+  --toggle-color: var(--dk-yellow);
+}
+
+body.dkaraoke-landing .stem-toggle-vocals {
+  --toggle-color: var(--dk-green);
+}
+
+body.dkaraoke-landing .lyrics-toggle-overlay {
+  --toggle-color: var(--dk-magenta);
 }
 
 body.dkaraoke-landing .player-column {

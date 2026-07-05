@@ -15,8 +15,10 @@
     <header class="topbar" aria-label="YouTube style page header">
       <a class="brand" href="https://github.com/forbenaj/KaraokeMachine" aria-label="Karaoke Machine repository">
         <img src="assets/brand/ka_72.png" alt="">
-        <strong>Karaoke Machine!</strong>
-        <strong style="color: #ffff00">カラオケマシン！</strong>
+        <span class="brand-title">
+          <strong>Karaoke Machine!</strong>
+          <strong class="brand-title-ja">カラオケマシン！</strong>
+        </span>
       </a>
       <nav class="top-actions" aria-label="Download">
         <a class="secondary-button" href="https://github.com/forbenaj/KaraokeMachine">GitHub</a>
@@ -39,8 +41,8 @@
             <span>Audio preparation</span>
           </div>
           <div class="toggle-list">
-            <button class="stem-toggle" type="button" data-toggle="instrumental" aria-pressed="true" style="--toggle-color: var(--dk-yellow)">Instrumental</button>
-            <button class="stem-toggle" type="button" data-toggle="vocals" aria-pressed="true" style="--toggle-color: var(--dk-green)">Vocals</button>
+            <button class="stem-toggle stem-toggle-instrumental" type="button" data-toggle="instrumental" aria-pressed="true">Instrumental</button>
+            <button class="stem-toggle stem-toggle-vocals" type="button" data-toggle="vocals" aria-pressed="true">Vocals</button>
           </div>
         </section>
       </aside>
@@ -82,7 +84,7 @@
             </div>
             <textarea aria-label="Prepared lyrics text" readonly>Loading real timed lyrics...</textarea>
             <div class="lyrics-actions">
-              <button class="lyrics-toggle" type="button" data-toggle="lyrics" aria-pressed="true" style="--toggle-color: var(--dk-magenta)">Lyrics</button>
+              <button class="lyrics-toggle lyrics-toggle-overlay" type="button" data-toggle="lyrics" aria-pressed="true">Lyrics</button>
               <div class="style-field">
                 <label for="lyric-style">Style</label>
                 <select id="lyric-style">
