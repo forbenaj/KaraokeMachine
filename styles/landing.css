@@ -139,6 +139,11 @@ body.dkaraoke-landing .video-action {
   transition: transform 120ms ease, box-shadow 120ms ease;
 }
 
+.action-button-img {
+  width: 30px;
+  height: 30px;
+}
+
 body.dkaraoke-landing .secondary-button {
   background: var(--dk-paper);
 }

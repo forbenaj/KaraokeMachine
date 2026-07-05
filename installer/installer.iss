@@ -1,6 +1,15 @@
-#define AppName "KaraokeMachine"
-#define AppVersion "0.0.1"
-#define AppPublisher "forbenaj"
+#ifndef AppName
+  #define AppName "KaraokeMachine"
+#endif
+#ifndef AppVersion
+  #define AppVersion "0.0.1"
+#endif
+#ifndef AppPublisher
+  #define AppPublisher "forbenaj"
+#endif
+#ifndef OutputBaseFilename
+  #define OutputBaseFilename "KaraokeMachineSetup"
+#endif
 
 [Setup]
 AppId={{9B76CE9F-75B3-4F13-94A6-611E423605E0}
@@ -11,7 +20,7 @@ DefaultDirName={localappdata}\Programs\KaraokeMachine
 DefaultGroupName=KaraokeMachine
 DisableProgramGroupPage=yes
 OutputDir=Output
-OutputBaseFilename=KaraokeMachineSetup
+OutputBaseFilename={#OutputBaseFilename}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

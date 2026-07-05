@@ -1,0 +1,85 @@
+name: Release installer
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create or update (example: v0.0.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Resolve release metadata
+        id: meta
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ inputs.tag }}"
+          } else {
+            $tag = "${{ github.ref_name }}"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            throw "Release tag is required."
+          }
+
+          $version = $tag -replace '^v', ''
+          $outputBase = "DKaraoKeSetup-$version"
+          $outputFile = "installer\Output\$outputBase.exe"
+
+          "release_tag=$tag" >> $env:GITHUB_OUTPUT
+          "app_version=$version" >> $env:GITHUB_OUTPUT
+          "output_base=$outputBase" >> $env:GITHUB_OUTPUT
+          "output_file=$outputFile" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            $iscc = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw "ISCC.exe was not found after installing Inno Setup."
+          }
+
+          & $iscc `
+            "/DAppVersion=${{ steps.meta.outputs.app_version }}" `
+            "/DOutputBaseFilename=${{ steps.meta.outputs.output_base }}" `
+            "installer\installer.iss"
+
+          if (-not (Test-Path -LiteralPath "${{ steps.meta.outputs.output_file }}")) {
+            throw "Expected installer was not generated: ${{ steps.meta.outputs.output_file }}"
+          }
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.output_base }}
+          path: ${{ steps.meta.outputs.output_file }}
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: DKaraoKe ${{ steps.meta.outputs.release_tag }}
+          generate_release_notes: true
+          files: ${{ steps.meta.outputs.output_file }}
