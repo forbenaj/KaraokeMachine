@@ -1,0 +1,604 @@
+/* ==========================================================================
+   Landing Page
+   ========================================================================== */
+
+html.dkaraoke-landing-page,
+html.dkaraoke-landing-page body {
+  overflow-x: hidden;
+}
+
+body.dkaraoke-landing * {
+  box-sizing: border-box;
+}
+
+body.dkaraoke-landing {
+  min-width: 320px;
+  margin: 0;
+  color: var(--dk-ink);
+  background-color: var(--dk-yellow);
+  background-image: var(--dk-page-bg);
+  background-size: 8px 8px, 100% 100%;
+  background-attachment: fixed;
+  font: 500 16px/1.45 var(--dk-body-font);
+}
+
+body.dkaraoke-landing button,
+body.dkaraoke-landing input,
+body.dkaraoke-landing textarea {
+  font: inherit;
+}
+
+body.dkaraoke-landing a {
+  color: inherit;
+}
+
+body.dkaraoke-landing .page-shell {
+  min-height: 100vh;
+  padding-bottom: 36px;
+}
+
+body.dkaraoke-landing .topbar {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  min-height: 74px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 24px 10px;
+  background: transparent;
+  border-bottom: 3px solid rgba(26, 26, 26, 0.7);
+  box-shadow: 0 4px 0 rgba(26, 26, 26, 0.18);
+}
+
+body.dkaraoke-landing .brand {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 2px 0;
+  text-decoration: none;
+}
+
+body.dkaraoke-landing .brand img {
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
+  border: var(--dk-border-sm);
+  background: color-mix(in srgb, var(--dk-paper) 76%, transparent);
+  box-shadow: var(--dk-small-shadow);
+  object-fit: contain;
+}
+
+body.dkaraoke-landing .brand strong {
+  min-width: 0;
+  color: var(--dk-magenta);
+  font: 900 clamp(18px, 2.2vw, 28px) / 0.92 var(--dk-display-font);
+  text-transform: uppercase;
+  -webkit-text-stroke: 1px var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: 2px 2px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .download-button,
+body.dkaraoke-landing .secondary-button,
+body.dkaraoke-landing .video-action {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 14px;
+  border: var(--dk-border-sm);
+  border-radius: 0;
+  color: var(--dk-ink);
+  background: var(--dk-yellow);
+  box-shadow: var(--dk-small-shadow);
+  font: 900 12px/1 var(--dk-ui-font);
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+
+body.dkaraoke-landing .secondary-button {
+  background: var(--dk-paper);
+}
+
+body.dkaraoke-landing .top-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+body.dkaraoke-landing .top-actions a:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .watch-layout {
+  display: grid;
+  grid-template-columns: clamp(218px, 16vw, 296px) minmax(0, 1fr) clamp(226px, 17vw, 320px);
+  gap: 24px;
+  align-items: start;
+  max-width: 1720px;
+  margin: 24px auto 0;
+  padding: 0 24px;
+}
+
+body.dkaraoke-landing .left-rail,
+body.dkaraoke-landing .right-rail {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 16px;
+}
+
+body.dkaraoke-landing .monitor-frame {
+  position: relative;
+  z-index: 0;
+  width: calc(100% - 10px);
+  overflow: visible;
+  align-self: center;
+  aspect-ratio: 1;
+  box-shadow: var(--dk-panel-shadow);
+  background: transparent;
+}
+
+body.dkaraoke-landing .monitor-frame::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: 50%;
+  left: 50%;
+  width: 180vmax;
+  max-width: none;
+  aspect-ratio: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    color-mix(in srgb, var(--dk-magenta) 100%, transparent) 3%,
+    color-mix(in srgb, var(--dk-magenta) 50%, transparent) 8%,
+    color-mix(in srgb, var(--dk-magenta) 15%, transparent) 70%,
+    color-mix(in srgb, var(--dk-magenta) 0%, transparent) 80%
+  );
+  transform: translate(-50%, -50%) rotate(0turn);
+  transform-origin: center;
+  mask: url("../star.svg") center / contain no-repeat;
+  -webkit-mask: url("../star.svg") center / contain no-repeat;
+  animation: dkaraoke-landing-monitor-spin 28s linear infinite;
+  will-change: transform;
+}
+
+body.dkaraoke-landing .monitor-frame::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  pointer-events: none;
+  border: var(--dk-border-lg);
+}
+
+body.dkaraoke-landing .monitor-display {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  transform: rotate(-5deg);
+  color: var(--dk-paper);
+  text-align: center;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: 4px 4px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .monitor-display strong {
+  color: var(--dk-cyan);
+  font: 900 clamp(30px, 3vw, 52px) / 0.92 var(--dk-display-font);
+  filter: drop-shadow(0 0 18px var(--dk-yellow));
+}
+
+body.dkaraoke-landing .monitor-display span {
+  color: var(--dk-yellow);
+  font: 900 15px/1.1 var(--dk-ui-font);
+  letter-spacing: 0.05em;
+}
+
+body.dkaraoke-landing .panel {
+  position: relative;
+  z-index: 1;
+  width: calc(100% - 10px);
+  border: var(--dk-border-lg);
+  background: var(--dk-paper);
+  box-shadow: var(--dk-panel-shadow);
+}
+
+body.dkaraoke-landing .panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 18px 18px 0;
+}
+
+body.dkaraoke-landing .panel-header strong {
+  color: var(--dk-magenta);
+  font: 900 24px/1 var(--dk-display-font);
+  text-transform: uppercase;
+  -webkit-text-stroke: 1px var(--dk-ink);
+  text-shadow: 2px 2px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .panel-header span {
+  font: 700 12px/1.35 var(--dk-ui-font);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .toggle-list {
+  display: flex;
+  flex-direction: column;
+  margin: 14px 18px 18px;
+  border: var(--dk-border-sm);
+}
+
+body.dkaraoke-landing .stem-toggle,
+body.dkaraoke-landing .lyrics-toggle {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border: 0;
+  border-bottom: var(--dk-border-sm);
+  border-radius: 0;
+  color: var(--dk-ink);
+  background: var(--dk-paper);
+  cursor: pointer;
+  font: 700 14px/1 var(--dk-ui-font);
+  letter-spacing: 0.07em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .stem-toggle:last-child,
+body.dkaraoke-landing .lyrics-toggle:last-child {
+  border-bottom: 0;
+}
+
+body.dkaraoke-landing .stem-toggle::after,
+body.dkaraoke-landing .lyrics-toggle::after {
+  content: "";
+  width: 44px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: var(--dk-border-sm);
+  background:
+    radial-gradient(circle at 25% 50%, var(--dk-paper) 0 7px, transparent 8px),
+    var(--dk-disabled);
+}
+
+body.dkaraoke-landing .stem-toggle[aria-pressed="true"]::after,
+body.dkaraoke-landing .lyrics-toggle[aria-pressed="true"]::after {
+  background:
+    radial-gradient(circle at 75% 50%, var(--dk-paper) 0 7px, transparent 8px),
+    var(--toggle-color, var(--dk-magenta));
+}
+
+body.dkaraoke-landing .player-column {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+body.dkaraoke-landing .player-wrap {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: var(--dk-border-lg);
+  background: var(--dk-ink);
+  box-shadow: var(--dk-panel-shadow);
+}
+
+body.dkaraoke-landing .player-wrap iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+body.dkaraoke-landing .silence-curtain {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--dk-paper);
+  font: 900 clamp(32px, 5vw, 72px) / 1 var(--dk-display-font);
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--dk-ink);
+  text-shadow: var(--dk-text-shadow);
+}
+
+body.dkaraoke-landing .silence-curtain[hidden] {
+  display: none;
+}
+
+body.dkaraoke-landing .metadata {
+  margin-top: 18px;
+  padding: 16px;
+  border: var(--dk-border-lg);
+  background: var(--dk-paper);
+  box-shadow: var(--dk-panel-shadow);
+}
+
+body.dkaraoke-landing .metadata h1 {
+  margin: 0 0 12px;
+  font: 800 clamp(22px, 2.2vw, 34px) / 1.2 var(--dk-body-font);
+}
+
+body.dkaraoke-landing .meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+body.dkaraoke-landing .video-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+body.dkaraoke-landing .description {
+  margin-top: 14px;
+  padding: 12px;
+  border: var(--dk-border-sm);
+  background: #fff78d;
+  box-shadow: var(--dk-small-shadow);
+  color: var(--dk-body-copy);
+  font: 650 14px/1.45 var(--dk-body-font);
+}
+
+body.dkaraoke-landing .description b {
+  color: var(--dk-ink);
+}
+
+body.dkaraoke-landing .lyrics-panel {
+  overflow: hidden;
+}
+
+body.dkaraoke-landing .lyrics-heading {
+  min-height: 56px;
+  padding: 10px 12px;
+  border-bottom: var(--dk-border-lg);
+  background: var(--dk-cyan);
+}
+
+body.dkaraoke-landing .lyrics-heading strong {
+  color: var(--dk-paper);
+  font: 900 42px/0.9 var(--dk-display-font);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--dk-ink);
+  paint-order: stroke fill;
+  text-shadow: var(--dk-text-shadow);
+}
+
+body.dkaraoke-landing .lyrics-body {
+  padding: 12px;
+}
+
+body.dkaraoke-landing .lyrics-name {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 9px;
+  margin-bottom: 9px;
+}
+
+body.dkaraoke-landing .lyrics-name input,
+body.dkaraoke-landing .lyrics-body textarea {
+  min-width: 0;
+  border: var(--dk-border-sm);
+  border-radius: 0;
+  color: var(--dk-ink);
+  background: var(--dk-note);
+  box-shadow: inset 3px 3px 0 rgba(0, 0, 0, 0.12);
+  font: 800 12px/1 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .lyrics-name input {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+body.dkaraoke-landing .lyrics-name button,
+body.dkaraoke-landing .lyrics-actions button {
+  min-height: 34px;
+  border: var(--dk-border-sm);
+  border-radius: 0;
+  background: var(--dk-paper);
+  box-shadow: var(--dk-small-shadow);
+  cursor: default;
+  font: 900 11px/1 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .lyrics-body textarea {
+  width: 100%;
+  min-height: 278px;
+  resize: vertical;
+  padding: 13px;
+  font: 600 15px/1.55 var(--dk-body-font);
+  text-transform: none;
+}
+
+body.dkaraoke-landing .lyrics-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 12px;
+  border-top: var(--dk-border-lg);
+}
+
+body.dkaraoke-landing .lyrics-actions .lyrics-toggle {
+  border: var(--dk-border-sm);
+}
+
+body.dkaraoke-landing .style-field {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  font: 900 12px/1 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .style-field select {
+  min-height: 34px;
+  border: var(--dk-border-sm);
+  border-radius: 0;
+  background: var(--dk-note);
+  font: 800 12px/1 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .install-band {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  gap: 18px;
+  max-width: 1180px;
+  margin: 28px auto 0;
+  padding: 0 24px;
+}
+
+body.dkaraoke-landing .install-card {
+  padding: 18px;
+  border: var(--dk-border-lg);
+  background: var(--dk-paper);
+  box-shadow: var(--dk-panel-shadow);
+}
+
+body.dkaraoke-landing .install-card h2,
+body.dkaraoke-landing .install-card h3 {
+  margin: 0 0 10px;
+  color: var(--dk-magenta);
+  font: 900 28px/1 var(--dk-display-font);
+  text-transform: uppercase;
+  -webkit-text-stroke: 1px var(--dk-ink);
+  text-shadow: 2px 2px 0 var(--dk-ink);
+}
+
+body.dkaraoke-landing .install-card p {
+  margin: 0 0 14px;
+  color: var(--dk-body-copy);
+}
+
+body.dkaraoke-landing .install-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font: 800 13px/1.35 var(--dk-ui-font);
+  text-transform: uppercase;
+}
+
+body.dkaraoke-landing .install-steps li {
+  padding: 9px 10px;
+  border: var(--dk-border-sm);
+  background: var(--dk-note);
+}
+
+body.dkaraoke-landing .code-line {
+  display: block;
+  overflow: auto;
+  margin-top: 5px;
+  font: 700 12px/1.4 Consolas, "Cascadia Mono", monospace;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+@keyframes dkaraoke-landing-monitor-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.dkaraoke-landing .monitor-frame::before {
+    animation: none;
+  }
+}
+
+@media (max-width: 1180px) {
+  body.dkaraoke-landing .watch-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.dkaraoke-landing .left-rail,
+body.dkaraoke-landing .right-rail {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+
+  body.dkaraoke-landing .monitor-frame,
+body.dkaraoke-landing .panel {
+    width: 100%;
+  }
+
+}
+
+@media (max-width: 780px) {
+  body.dkaraoke-landing .topbar {
+    position: static;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px;
+  }
+
+  body.dkaraoke-landing .brand {
+    justify-content: center;
+  }
+
+  body.dkaraoke-landing .top-actions {
+    justify-content: stretch;
+  }
+
+  body.dkaraoke-landing .top-actions a {
+    flex: 1;
+  }
+
+  body.dkaraoke-landing .watch-layout,
+body.dkaraoke-landing .install-band {
+    padding: 0 12px;
+  }
+
+  body.dkaraoke-landing .left-rail,
+body.dkaraoke-landing .right-rail,
+body.dkaraoke-landing .install-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body.dkaraoke-landing .metadata h1 {
+    font-size: 22px;
+  }
+}
