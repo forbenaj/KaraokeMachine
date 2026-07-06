@@ -14,7 +14,13 @@ $registryPath = "HKCU:\Software\Google\Chrome\NativeMessagingHosts\$hostName"
 $toolsVenv = Join-Path $root ".venv-tools"
 $toolsPython = Join-Path $toolsVenv "Scripts\python.exe"
 $toolsScripts = Join-Path $toolsVenv "Scripts"
+$pythonRuntimeScript = Join-Path $root "scripts\python-runtime.ps1"
 $manifest = Get-Content (Join-Path $root "manifest.json") -Raw | ConvertFrom-Json
+
+if (-not (Test-Path -LiteralPath $pythonRuntimeScript)) {
+  throw "Python runtime helper was not found: $pythonRuntimeScript"
+}
+. $pythonRuntimeScript
 
 function Get-ExtensionId([string]$Key) {
   $bytes = [Convert]::FromBase64String($Key)
@@ -41,17 +47,22 @@ function Invoke-Checked([string]$Description, [scriptblock]$Command) {
   }
 }
 
-$pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCommand) {
-  throw "Python 3 was not found. Install Python from https://www.python.org/downloads/windows/ and rerun install.ps1."
+$pythonInfo = Resolve-DKaraokePython -InstallIfMissing -Purpose "DKaraoKe tools"
+$python = $pythonInfo.executable
+
+if (Test-Path $toolsPython) {
+  try {
+    Assert-DKaraokePythonSupported $toolsPython "DKaraoKe tools environment" | Out-Null
+  } catch {
+    Remove-DKaraokeGeneratedVenv $root $toolsVenv "The DKaraoKe tools environment uses an unsupported Python."
+  }
 }
-$python = $pythonCommand.Source
-Invoke-Checked "Python validation" { & $python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)" }
 
 if (-not (Test-Path $toolsPython)) {
   Write-Host "Creating the Karaoke Machine! tools environment..."
   Invoke-Checked "Python environment creation" { & $python -m venv $toolsVenv }
 }
+$toolsPythonInfo = Assert-DKaraokePythonSupported $toolsPython "DKaraoKe tools environment"
 
 Write-Host "Installing/updating yt-dlp and its YouTube JavaScript solver..."
 Invoke-Checked "yt-dlp installation" { & $toolsPython -m pip install --disable-pip-version-check --upgrade "yt-dlp[default]" }
@@ -127,6 +138,7 @@ $roformerMissing = -not (Test-Path (Join-Path $root ".venv-roformer\Scripts\pyth
 Write-Host ""
 Write-Host "Registered native host: $hostName"
 Write-Host "Extension ID: $extensionId"
+Write-Host "Python: $toolsPython ($($toolsPythonInfo.version), $($toolsPythonInfo.bits)-bit)"
 Write-Host "yt-dlp: $toolsScripts\yt-dlp.exe"
 Write-Host "Node.js: $($node.Source)"
 Write-Host "FFmpeg: $($ffmpeg.Source)"

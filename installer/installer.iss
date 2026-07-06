@@ -107,7 +107,7 @@ begin
   HintLabel.Width := OptionsPage.SurfaceWidth;
   HintLabel.Height := 58;
   HintLabel.WordWrap := True;
-  HintLabel.Caption := 'CPU is safest for setup. CUDA builds are faster later, but need a compatible NVIDIA driver. RoFormer also needs 64-bit Python 3.10, 3.11, or 3.12.';
+  HintLabel.Caption := 'CPU is safest for setup. CUDA builds are faster later, but need a compatible NVIDIA driver. Setup installs Python 3.12 with winget if needed.';
 
   InstallRoFormerCheck := TNewCheckBox.Create(OptionsPage);
   InstallRoFormerCheck.Parent := OptionsPage.Surface;

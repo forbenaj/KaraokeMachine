@@ -2,7 +2,7 @@ param(
   [ValidateSet("cpu", "cu121", "cu124")]
   [string]$TorchBuild = "cpu",
   [string]$TorchVersion = "2.5.1",
-  [string]$Python = "python"
+  [string]$Python = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,7 +16,12 @@ $commit = "25f44ffb55ee3c301281bba21b2d6d311cb69ae2"
 $checkpointSha256 = "87201f4d31afb5bc79993230fc49446918425574db48c01c405e44f365c7559e"
 $checkpointSize = 913106900
 $checkpointUrl = "https://huggingface.co/KimberleyJSN/melbandroformer/resolve/main/MelBandRoformer.ckpt?download=true"
-$supportedPython = "3.10, 3.11, or 3.12"
+$pythonRuntimeScript = Join-Path $root "scripts\python-runtime.ps1"
+
+if (-not (Test-Path -LiteralPath $pythonRuntimeScript)) {
+  throw "Python runtime helper was not found: $pythonRuntimeScript"
+}
+. $pythonRuntimeScript
 
 function Invoke-Checked([string]$Description, [scriptblock]$Command) {
   & $Command
@@ -25,31 +30,21 @@ function Invoke-Checked([string]$Description, [scriptblock]$Command) {
   }
 }
 
-function Get-PythonRuntimeInfo([string]$Executable) {
-  $json = & $Executable -c "import json, platform, struct, sys; print(json.dumps({'version': platform.python_version(), 'major': sys.version_info.major, 'minor': sys.version_info.minor, 'bits': struct.calcsize('P') * 8, 'executable': sys.executable}))"
-  if ($LASTEXITCODE -ne 0) {
-    throw "Python validation failed for '$Executable'."
-  }
-  return $json | ConvertFrom-Json
-}
+$selectedPython = Resolve-DKaraokePython -RequestedPython $Python -InstallIfMissing -Purpose "RoFormer"
+$selectedPythonExecutable = $selectedPython.executable
 
-function Assert-RoFormerPythonSupported([string]$Executable, [string]$Context) {
-  $info = Get-PythonRuntimeInfo $Executable
-  if ($info.bits -ne 64) {
-    throw "RoFormer requires 64-bit Python, but $Context is $($info.bits)-bit Python $($info.version) at $($info.executable). Install 64-bit Python $supportedPython and rerun setup-roformer.ps1."
+if (Test-Path $pythonPath) {
+  try {
+    Assert-DKaraokePythonSupported $pythonPath "RoFormer virtual environment" | Out-Null
+  } catch {
+    Remove-DKaraokeGeneratedVenv $root $venv "The RoFormer virtual environment uses an unsupported Python."
   }
-  if ($info.major -ne 3 -or $info.minor -lt 10 -or $info.minor -gt 12) {
-    throw "RoFormer is pinned to PyTorch $TorchVersion, which supports Python $supportedPython on Windows. $Context is Python $($info.version) at $($info.executable). Install Python $supportedPython, remove .venv-roformer if it already exists, and rerun setup-roformer.ps1."
-  }
-  return $info
 }
-
-Assert-RoFormerPythonSupported $Python "Requested Python" | Out-Null
 
 if (-not (Test-Path $pythonPath)) {
-  Invoke-Checked "RoFormer Python environment creation" { & $Python -m venv $venv }
+  Invoke-Checked "RoFormer Python environment creation" { & $selectedPythonExecutable -m venv $venv }
 }
-$roformerPython = Assert-RoFormerPythonSupported $pythonPath "RoFormer virtual environment"
+$roformerPython = Assert-DKaraokePythonSupported $pythonPath "RoFormer virtual environment"
 foreach ($command in @("git", "curl.exe")) {
   if (-not (Get-Command $command -ErrorAction SilentlyContinue)) {
     throw "Required command not found: $command"

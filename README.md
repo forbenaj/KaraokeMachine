@@ -13,7 +13,7 @@ Karaoke Machine! is a Windows-first Chrome MV3 extension with a local Python bac
 
 ## Install
 
-`install.ps1` creates `.venv-tools`, installs or updates `yt-dlp` with its YouTube JavaScript solver, validates Node.js and FFmpeg, and registers the native host for the extension. Missing Node.js or FFmpeg dependencies are installed with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
+`install.ps1` creates `.venv-tools`, installs or updates `yt-dlp` with its YouTube JavaScript solver, validates Node.js and FFmpeg, and registers the native host for the extension. Missing Python 3.12, Node.js, or FFmpeg dependencies are installed with `winget`; pass `-SkipFfmpegInstall` only when `ffmpeg` and `ffprobe` are already on `PATH`.
 
 From this directory, install the backend and the RoFormer/CTC-alignment runtime:
 
@@ -48,8 +48,7 @@ Build prerequisites:
 
 - Inno Setup 6
 - PowerShell
-- 64-bit Python 3.10, 3.11, or 3.12 for the pinned PyTorch/RoFormer runtime
-- `winget` recommended for installing Node.js and FFmpeg when missing
+- `winget` recommended so setup can install 64-bit Python 3.12, Node.js, and FFmpeg when missing
 
 Build the installer from the repo root:
 
@@ -230,7 +229,7 @@ Common recovery steps:
 
 - **Native host unavailable:** rerun `.\install.ps1`, restart Chrome, and reload the extension.
 - **RoFormer is not installed:** rerun `.\setup-roformer.ps1`; checkpoint downloads resume automatically.
-- **PyTorch installation failed:** install 64-bit Python 3.10, 3.11, or 3.12, delete `.venv-roformer` if it was created with another Python, then rerun `.\setup-roformer.ps1`. PyTorch 2.5.1 does not install on unsupported Python versions such as Python 3.13.
+- **PyTorch/Python version failed:** rerun setup with `winget` available so it can install 64-bit Python 3.12. If `winget` is unavailable, install 64-bit Python 3.10, 3.11, or 3.12 with the Python Launcher enabled, then rerun `.\setup-roformer.ps1`. PyTorch 2.5.1 does not install on unsupported Python versions such as Python 3.13 or 3.14.
 - **FFmpeg not found:** ensure both `ffmpeg` and `ffprobe` are on `PATH`, then rerun `.\install.ps1`.
 - **A prepared song behaves incorrectly:** remove only that video's cache directory and press the **Monitor** again.
 - **Timings cannot be extracted:** try the default original-audio source, or prepare stems first when using vocal-stem timing. If Silero VAD is unavailable, rerun `.\setup-roformer.ps1`.
