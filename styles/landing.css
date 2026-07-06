@@ -378,10 +378,11 @@ body.dkaraoke-landing .toggle-list {
 body.dkaraoke-landing .stem-toggle,
 body.dkaraoke-landing .lyrics-toggle {
   display: flex;
+  position: relative;
   width: 100%;
   min-height: 52px;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding: 0 12px;
   border: 0;
   border-bottom: var(--dk-border-sm);
@@ -395,6 +396,15 @@ body.dkaraoke-landing .lyrics-toggle {
   text-transform: uppercase;
 }
 
+body.dkaraoke-landing .stem-toggle-label {
+  min-width: 0;
+  max-width: 100%;
+  padding-right: 20px;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
 body.dkaraoke-landing .stem-toggle:last-child,
 body.dkaraoke-landing .lyrics-toggle:last-child {
   border-bottom: 0;
@@ -403,13 +413,16 @@ body.dkaraoke-landing .lyrics-toggle:last-child {
 body.dkaraoke-landing .stem-toggle::after,
 body.dkaraoke-landing .lyrics-toggle::after {
   content: "";
+  position: absolute;
+  top: 50%;
+  right: 12px;
   width: 44px;
   height: 22px;
-  flex: 0 0 auto;
   border: var(--dk-border-sm);
   background:
     radial-gradient(circle at 25% 50%, var(--dk-paper) 0 7px, transparent 8px),
     var(--dk-disabled);
+  transform: translateY(-50%);
 }
 
 body.dkaraoke-landing .stem-toggle[aria-pressed="true"]::after,
