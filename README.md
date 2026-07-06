@@ -1,7 +1,27 @@
 # Karaoke Machine! (カラオケマシン！)
 
-![Logo-EN](assets/brand/km-en.png)
-![Logo](assets/brand/km_transparent.png)
+<p align="center">
+<img src="assets/brand/km-en.png" alt="Logo-EN" />
+<img src="assets/brand/km_transparent.png" alt="Logo" />
+</p>
+
+<p align="center"><strong>Support the project:</strong></p>
+
+<p align="center">
+  <a href="https://cafecito.app/forbenaj" rel="noopener" target="_blank">
+    <img srcset="https://cdn.cafecito.app/imgs/buttons/button_6.png 1x, https://cdn.cafecito.app/imgs/buttons/button_6_2x.png 2x, https://cdn.cafecito.app/imgs/buttons/button_6_3.75x.png 3.75x" src="https://cdn.cafecito.app/imgs/buttons/button_6.png" alt="Support on Cafecito" />
+  </a>
+  <a href="https://ko-fi.com/J8X222M36H" rel="noopener" target="_blank">
+    <img height="36" src="https://storage.ko-fi.com/cdn/kofi6.png?v=6" alt="Support on Ko-fi" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.paypal.com/donate/?hosted_button_id=36UKH6AP3GEP4" rel="noopener" target="_blank">
+    <img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate with PayPal" />
+  </a>
+  <img src="https://img.shields.io/badge/Alias-forbenaj-00b386?style=for-the-badge&logo=mercadopago&logoColor=white" alt="Alias forbenaj" />
+</p>
 
 Turn *YouTube* into a *Karaoke Machine*!
 

@@ -148,6 +148,40 @@ body.dkaraoke-landing .secondary-button {
   background: var(--dk-paper);
 }
 
+body.dkaraoke-landing .support-link,
+body.dkaraoke-landing .alias-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-decoration: none;
+  transition: transform 120ms ease, filter 120ms ease;
+}
+
+body.dkaraoke-landing .support-link img,
+body.dkaraoke-landing .alias-button img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+body.dkaraoke-landing .support-link-cafecito img {
+  height: 38px;
+}
+
+body.dkaraoke-landing .support-link-kofi img,
+body.dkaraoke-landing .support-link-paypal img,
+body.dkaraoke-landing .alias-button img {
+  height: 36px;
+}
+
+body.dkaraoke-landing .alias-button {
+  cursor: pointer;
+}
+
 body.dkaraoke-landing .top-actions {
   display: flex;
   flex: 0 0 auto;
@@ -763,6 +797,49 @@ body.dkaraoke-landing .setup-panel {
   border: var(--dk-border-sm);
   background: var(--dk-note);
   box-shadow: var(--dk-small-shadow);
+}
+
+body.dkaraoke-landing .support-panel {
+  padding: 14px;
+  border: var(--dk-border-sm);
+  background: #fff9c9;
+  box-shadow: var(--dk-small-shadow);
+}
+
+body.dkaraoke-landing .support-panel p {
+  margin: 0 0 12px;
+}
+
+body.dkaraoke-landing .support-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+body.dkaraoke-landing .support-link:hover,
+body.dkaraoke-landing .support-link:focus-visible,
+body.dkaraoke-landing .alias-button:hover,
+body.dkaraoke-landing .alias-button:focus-visible {
+  transform: translate(-1px, -1px);
+  filter: drop-shadow(4px 4px 0 rgba(0, 0, 0, 0.45));
+}
+
+body.dkaraoke-landing .alias-button:focus-visible {
+  outline: 4px solid var(--dk-cyan);
+  outline-offset: 3px;
+}
+
+body.dkaraoke-landing .support-note {
+  margin: 12px 0 0;
+  font: 700 12px/1.4 var(--dk-body-font);
+}
+
+body.dkaraoke-landing .support-note code {
+  padding: 2px 6px;
+  border: 2px solid var(--dk-ink);
+  background: var(--dk-paper);
+  font: 900 11px/1 Consolas, "Cascadia Mono", monospace;
 }
 
 body.dkaraoke-landing .setup-steps {

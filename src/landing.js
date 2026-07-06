@@ -49,11 +49,14 @@
     const lyricsText = document.querySelector(".lyrics-body textarea");
     const lyricsName = document.querySelector(".lyrics-name input");
     const tryMeStar = document.getElementById("try-me-star");
+    const aliasButton = document.querySelector("[data-copy-alias]");
+    const aliasBadge = aliasButton?.querySelector("[data-alias-badge]");
     const stemAudio = {
     instrumental: new Audio(DEMO.instrumentalUrl),
     vocals: new Audio(DEMO.vocalsUrl)
     };
     let landingScrollFrame = null;
+    let aliasResetTimer = null;
 
     for (const audio of Object.values(stemAudio)) {
     audio.preload = "auto";
@@ -555,6 +558,36 @@
     hideTryMeStar();
     }
 
+    async function copyAliasToClipboard() {
+    if (!aliasButton) return;
+    const alias = aliasButton.dataset.copyAlias || "";
+    if (!alias) return;
+    const defaultBadgeSrc = "https://img.shields.io/badge/Alias-forbenaj-00b386?style=for-the-badge&logo=mercadopago&logoColor=white";
+    const copiedBadgeSrc = "https://img.shields.io/badge/Alias-copied!-11a36c?style=for-the-badge&logo=mercadopago&logoColor=white";
+
+    try {
+        await navigator.clipboard.writeText(alias);
+        if (aliasBadge) {
+        aliasBadge.src = copiedBadgeSrc;
+        aliasBadge.alt = `Alias ${alias} copied`;
+        }
+        aliasButton.setAttribute("aria-label", `Alias ${alias} copied`);
+        window.clearTimeout(aliasResetTimer);
+        aliasResetTimer = window.setTimeout(() => {
+        if (aliasBadge) {
+          aliasBadge.src = defaultBadgeSrc;
+          aliasBadge.alt = `Alias ${alias}`;
+        }
+        aliasButton.setAttribute("aria-label", `Copy alias ${alias}`);
+        }, 1800);
+    } catch (_error) {
+        if (aliasBadge) {
+        aliasBadge.src = defaultBadgeSrc;
+        aliasBadge.alt = `Alias ${alias}`;
+        }
+    }
+    }
+
     buttons.forEach((button) => {
     button.addEventListener("click", () => {
         const key = button.dataset.toggle;
@@ -575,6 +608,7 @@
     });
 
     tryMeStar?.addEventListener("click", playDemo);
+    aliasButton?.addEventListener("click", copyAliasToClipboard);
 
     window.onYouTubeIframeAPIReady = () => {
     player = new YT.Player("youtube-player", {
