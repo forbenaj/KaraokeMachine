@@ -118,6 +118,30 @@ function Assert-DKaraokePythonSupported([string]$Executable, [string]$Context) {
   return $info
 }
 
+function Stop-DKaraokeProcessesInPath([string]$TargetPath) {
+  $normalizedTarget = $TargetPath.TrimEnd('\')
+  $processes = @()
+  try {
+    $processes = Get-CimInstance Win32_Process -ErrorAction Stop |
+      Where-Object {
+        $_.ExecutablePath -and
+        $_.ExecutablePath.StartsWith("$normalizedTarget\", [StringComparison]::OrdinalIgnoreCase)
+      }
+  } catch {
+    Write-Warning "Could not inspect running Python processes before replacing the generated venv. $($_.Exception.Message)"
+    return
+  }
+
+  foreach ($process in $processes) {
+    Write-Warning "Stopping DKaraoKe Python process $($process.ProcessId): $($process.ExecutablePath)"
+    try {
+      Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+    } catch {
+      Write-Warning "Could not stop process $($process.ProcessId). $($_.Exception.Message)"
+    }
+  }
+}
+
 function Remove-DKaraokeGeneratedVenv([string]$Root, [string]$VenvPath, [string]$Reason) {
   $rootPath = (Resolve-Path -LiteralPath $Root).Path.TrimEnd('\')
   $parentPath = Split-Path -Parent $VenvPath
@@ -127,5 +151,18 @@ function Remove-DKaraokeGeneratedVenv([string]$Root, [string]$VenvPath, [string]
     throw "Refusing to remove generated venv outside the install folder: $targetPath"
   }
   Write-Warning "$Reason Removing generated venv: $targetPath"
-  Remove-Item -LiteralPath $targetPath -Recurse -Force
+  Stop-DKaraokeProcessesInPath $targetPath
+
+  for ($attempt = 1; $attempt -le 5; $attempt += 1) {
+    try {
+      Remove-Item -LiteralPath $targetPath -Recurse -Force -ErrorAction Stop
+      return
+    } catch {
+      if ($attempt -eq 5) {
+        throw "Could not replace generated venv at $targetPath. Close Chrome and any DKaraoKe setup windows, then rerun setup. $($_.Exception.Message)"
+      }
+      Start-Sleep -Milliseconds (300 * $attempt)
+      Stop-DKaraokeProcessesInPath $targetPath
+    }
+  }
 }
