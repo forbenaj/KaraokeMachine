@@ -96,16 +96,16 @@ begin
   TorchCombo.Items.Add('CPU');
   TorchCombo.Items.Add('CUDA 12.1');
   TorchCombo.Items.Add('CUDA 12.4');
-  TorchCombo.ItemIndex := 2;
+  TorchCombo.ItemIndex := 0;
 
   HintLabel := TNewStaticText.Create(OptionsPage);
   HintLabel.Parent := OptionsPage.Surface;
   HintLabel.Left := 0;
   HintLabel.Top := TorchCombo.Top + TorchCombo.Height + 8;
   HintLabel.Width := OptionsPage.SurfaceWidth;
-  HintLabel.Height := 40;
+  HintLabel.Height := 58;
   HintLabel.WordWrap := True;
-  HintLabel.Caption := 'CUDA builds need a compatible NVIDIA driver.';
+  HintLabel.Caption := 'CPU is safest for setup. CUDA builds are faster later, but need a compatible NVIDIA driver. RoFormer also needs 64-bit Python 3.10, 3.11, or 3.12.';
 
   InstallRoFormerCheck := TNewCheckBox.Create(OptionsPage);
   InstallRoFormerCheck.Parent := OptionsPage.Surface;
