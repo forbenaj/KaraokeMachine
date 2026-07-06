@@ -57,6 +57,8 @@ var
   TorchCombo: TNewComboBox;
   InstallRoFormerCheck: TNewCheckBox;
   SkipFfmpegCheck: TNewCheckBox;
+  ExtensionFolderLabel: TNewStaticText;
+  ExtensionFolderEdit: TNewEdit;
 
 procedure InitializeWizard;
 var
@@ -122,6 +124,21 @@ begin
   SkipFfmpegCheck.Width := OptionsPage.SurfaceWidth;
   SkipFfmpegCheck.Caption := 'Skip FFmpeg install if ffmpeg and ffprobe are already on PATH';
   SkipFfmpegCheck.Checked := False;
+
+  ExtensionFolderLabel := TNewStaticText.Create(WizardForm);
+  ExtensionFolderLabel.Parent := WizardForm.FinishedPage;
+  ExtensionFolderLabel.Left := WizardForm.FinishedLabel.Left;
+  ExtensionFolderLabel.Top := WizardForm.FinishedLabel.Top + ScaleY(152);
+  ExtensionFolderLabel.Width := WizardForm.FinishedLabel.Width;
+  ExtensionFolderLabel.Caption := 'Extension folder to load in Chrome:';
+
+  ExtensionFolderEdit := TNewEdit.Create(WizardForm);
+  ExtensionFolderEdit.Parent := WizardForm.FinishedPage;
+  ExtensionFolderEdit.Left := WizardForm.FinishedLabel.Left;
+  ExtensionFolderEdit.Top := ExtensionFolderLabel.Top + ExtensionFolderLabel.Height + ScaleY(6);
+  ExtensionFolderEdit.Width := WizardForm.FinishedLabel.Width;
+  ExtensionFolderEdit.ReadOnly := True;
+  ExtensionFolderEdit.Text := ExpandConstant('{app}');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -225,12 +242,13 @@ end;
 procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID = wpFinished then begin
+    ExtensionFolderEdit.Text := ExpandConstant('{app}');
     WizardForm.FinishedLabel.Caption :=
       'KaraokeMachine is installed. Chrome still needs the extension loaded manually:' + #13#10 + #13#10 +
       '1. Open chrome://extensions' + #13#10 +
       '2. Enable Developer mode' + #13#10 +
       '3. Click Load unpacked' + #13#10 +
-      '4. Select the installed KaraokeMachine folder: ' + ExpandConstant('{app}') + #13#10 +
+      '4. Select the extension folder below' + #13#10 +
       '5. Restart Chrome if it was open during setup';
   end;
 end;
