@@ -138,7 +138,6 @@ begin
   ExtensionFolderEdit.Top := ExtensionFolderLabel.Top + ExtensionFolderLabel.Height + ScaleY(6);
   ExtensionFolderEdit.Width := WizardForm.FinishedLabel.Width;
   ExtensionFolderEdit.ReadOnly := True;
-  ExtensionFolderEdit.Text := ExpandConstant('{app}');
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
