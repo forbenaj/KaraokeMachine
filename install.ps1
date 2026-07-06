@@ -47,6 +47,15 @@ function Invoke-Checked([string]$Description, [scriptblock]$Command) {
   }
 }
 
+function ConvertTo-BatchLiteral([string]$Value) {
+  return $Value.Replace("%", "%%")
+}
+
+function Write-Utf8NoBomFile([string]$Path, [string]$Content) {
+  $encoding = New-Object System.Text.UTF8Encoding($false)
+  [IO.File]::WriteAllText($Path, $Content, $encoding)
+}
+
 $pythonInfo = Resolve-DKaraokePython -InstallIfMissing -Purpose "DKaraoKe tools"
 $python = $pythonInfo.executable
 
@@ -112,21 +121,26 @@ $extensionId = Get-ExtensionId $manifest.key
 $ffmpegDir = Split-Path -Parent $ffmpeg.Source
 $nodeDir = Split-Path -Parent $node.Source
 $launcherPath = @($toolsScripts, $ffmpegDir, $nodeDir) -join ";"
+$batchLauncherPath = ConvertTo-BatchLiteral $launcherPath
+$batchToolsPython = ConvertTo-BatchLiteral $toolsPython
+$batchHostScript = ConvertTo-BatchLiteral $hostScript
 
 New-Item -ItemType Directory -Path $hostDir -Force | Out-Null
-@"
+Write-Utf8NoBomFile $hostLauncher @"
 @echo off
-set "PATH=$launcherPath;%PATH%"
-"$toolsPython" "$hostScript"
-"@ | Set-Content -LiteralPath $hostLauncher -Encoding ASCII
+chcp 65001 >nul
+set "PATH=$batchLauncherPath;%PATH%"
+"$batchToolsPython" "$batchHostScript"
+"@
 
-[ordered]@{
+$hostManifestJson = [ordered]@{
   name = $hostName
   description = "Local downloader and RoFormer separator for Karaoke Machine!"
   path = $hostLauncher
   type = "stdio"
   allowed_origins = @("chrome-extension://$extensionId/")
-} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $hostManifest -Encoding UTF8
+} | ConvertTo-Json -Depth 4
+Write-Utf8NoBomFile $hostManifest $hostManifestJson
 
 New-Item -Path $registryPath -Force | Out-Null
 Set-Item -Path $registryPath -Value $hostManifest

@@ -1,5 +1,5 @@
 #ifndef AppName
-  #define AppName "KaraokeMachine"
+  #define AppName "DKaraoKe"
 #endif
 #ifndef AppVersion
   #define AppVersion "0.0.1"
@@ -8,7 +8,7 @@
   #define AppPublisher "forbenaj"
 #endif
 #ifndef OutputBaseFilename
-  #define OutputBaseFilename "KaraokeMachineSetup"
+  #define OutputBaseFilename "DKaraoKeSetup"
 #endif
 
 [Setup]
@@ -16,8 +16,8 @@ AppId={{9B76CE9F-75B3-4F13-94A6-611E423605E0}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\Programs\KaraokeMachine
-DefaultGroupName=KaraokeMachine
+DefaultDirName={localappdata}\Programs\DKaraoKe
+DefaultGroupName=DKaraoKe
 DisableProgramGroupPage=yes
 OutputDir=Output
 OutputBaseFilename={#OutputBaseFilename}
@@ -26,21 +26,21 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 UninstallDisplayIcon={app}\icons\icon128.png
-UninstallDisplayName=KaraokeMachine
+UninstallDisplayName=DKaraoKe
 
 [Files]
 Source: "..\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".git\*,.gitignore,.pytest_cache\*,.venv-*\*,.stem-models\*,node_modules\*,downloads\*,cache\*,separated\*,tests\*,demo\*,installer\*,AGENTS.md,host\dkaraoke_host.cmd,host\com.dkaraoke.downloader.json,*.pyc,__pycache__\*"
 
 [Icons]
-Name: "{autoprograms}\KaraokeMachine\KaraokeMachine Extension Folder"; Filename: "{app}"
-Name: "{autoprograms}\KaraokeMachine\KaraokeMachine Setup Log"; Filename: "notepad.exe"; Parameters: """{localappdata}\DKaraoKe\setup.log"""
-Name: "{autoprograms}\KaraokeMachine\Uninstall KaraokeMachine"; Filename: "{uninstallexe}"
+Name: "{autoprograms}\DKaraoKe\DKaraoKe Extension Folder"; Filename: "{app}"
+Name: "{autoprograms}\DKaraoKe\DKaraoKe Setup Log"; Filename: "notepad.exe"; Parameters: """{localappdata}\DKaraoKe\setup.log"""
+Name: "{autoprograms}\DKaraoKe\Uninstall DKaraoKe"; Filename: "{uninstallexe}"
 
 [Run]
 Filename: "{code:GetChromePath}"; Parameters: "chrome://extensions"; Description: "Open Chrome extensions page"; Flags: postinstall nowait skipifsilent unchecked; Check: HasChrome
 
 [UninstallRun]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"""; Flags: waituntilterminated runhidden; RunOnceId: "KaraokeMachineNativeHost"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall.ps1"""; Flags: waituntilterminated runhidden; RunOnceId: "DKaraoKeNativeHost"
 
 [UninstallDelete]
 Type: files; Name: "{app}\host\dkaraoke_host.cmd"
@@ -68,13 +68,13 @@ begin
   DownloadsPage := CreateInputDirPage(
     wpSelectDir,
     'Choose stems folder',
-    'Where should KaraokeMachine save separated audio and lyrics?',
-    'KaraokeMachine keeps prepared songs here so it can reuse them later. You can keep the default folder or choose a larger drive.',
+    'Where should DKaraoKe save separated audio and lyrics?',
+    'DKaraoKe keeps prepared songs here so it can reuse them later. You can keep the default folder or choose a larger drive.',
     False,
     ''
   );
   DownloadsPage.Add('Stems and downloads folder:');
-  DownloadsPage.Values[0] := ExpandConstant('{localappdata}\KaraokeMachine\downloads');
+  DownloadsPage.Values[0] := ExpandConstant('{localappdata}\DKaraoKe\downloads');
 
   OptionsPage := CreateCustomPage(
     DownloadsPage.ID,
@@ -218,7 +218,7 @@ var
   PowerShell: String;
 begin
   if CurStep = ssPostInstall then begin
-    WizardForm.StatusLabel.Caption := 'Setting up KaraokeMachine... This can take a while when RoFormer is installed.';
+    WizardForm.StatusLabel.Caption := 'Setting up DKaraoKe... This can take a while when RoFormer is installed.';
     PowerShell := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
     Parameters :=
       '-NoProfile -ExecutionPolicy Bypass -File ' +
@@ -230,10 +230,10 @@ begin
       ' ' + GetSkipFfmpegArg('');
 
     if not Exec(PowerShell, Parameters, ExpandConstant('{app}'), SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode) then begin
-      RaiseException('Could not start KaraokeMachine setup. See %LOCALAPPDATA%\DKaraoKe\setup.log if it was created.');
+      RaiseException('Could not start DKaraoKe setup. See %LOCALAPPDATA%\DKaraoKe\setup.log if it was created.');
     end;
     if ResultCode <> 0 then begin
-      RaiseException('KaraokeMachine setup failed. See %LOCALAPPDATA%\DKaraoKe\setup.log for details.');
+      RaiseException('DKaraoKe setup failed. See %LOCALAPPDATA%\DKaraoKe\setup.log for details.');
     end;
   end;
 end;
@@ -243,7 +243,7 @@ begin
   if CurPageID = wpFinished then begin
     ExtensionFolderEdit.Text := ExpandConstant('{app}');
     WizardForm.FinishedLabel.Caption :=
-      'KaraokeMachine is installed. Chrome still needs the extension loaded manually:' + #13#10 + #13#10 +
+      'DKaraoKe is installed. Chrome still needs the extension loaded manually:' + #13#10 + #13#10 +
       '1. Open chrome://extensions' + #13#10 +
       '2. Enable Developer mode' + #13#10 +
       '3. Click Load unpacked' + #13#10 +
@@ -256,7 +256,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if (CurUninstallStep = usPostUninstall) and (not UninstallSilent) then begin
     MsgBox(
-      'KaraokeMachine has been uninstalled. Cached stems and lyrics remain in the configured downloads folder unless you remove them manually.',
+      'DKaraoKe has been uninstalled. Cached stems and lyrics remain in the configured downloads folder unless you remove them manually.',
       mbInformation,
       MB_OK
     );
